@@ -21,7 +21,7 @@ class GameScene: SKScene {
     var gridSize: CGFloat = 25.0
     var cols: Int = 0
     var rows: Int = 0
-    var bugSpeed: CGFloat = 150.0 // Smooth movement speed
+    var bugSpeed: CGFloat = 200.0  // Bix Challenge tarzı hızlı hareket
     let snakeSpeed: CGFloat = 160.0
 
     // MARK: - Game State
@@ -38,7 +38,6 @@ class GameScene: SKScene {
     var activeTrailNode: SKShapeNode!
     var activeTrailPath: CGMutablePath!
     var bugTrailEmitter: SKEmitterNode!
-
 
     // Entities
     var bugGridPos: (x: Int, y: Int) = (0, 0)
@@ -61,6 +60,69 @@ class GameScene: SKScene {
     var trailTexture: SKTexture!
     var borderTexture: SKTexture!
 
+    // MARK: - Setup (Fix for missing textures)
+    func setupTextures() {
+        let size = CGSize(width: gridSize, height: gridSize)
+
+        // Empty Cell
+        let emptyShape = SKShapeNode(rectOf: size)
+        emptyShape.fillColor = .clear
+        emptyShape.strokeColor = .clear
+        emptyTexture = view?.texture(from: emptyShape) ?? SKTexture()
+
+        // Filled Cell
+        let filledShape = SKShapeNode(rectOf: size)
+        filledShape.fillColor = SKColor(red: 0.2, green: 0.8, blue: 0.2, alpha: 0.3)
+        filledShape.strokeColor = .clear
+        filledTexture = view?.texture(from: filledShape) ?? SKTexture()
+
+        // Trail Cell
+        let trailShape = SKShapeNode(rectOf: size)
+        trailShape.fillColor = SKColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 0.5)
+        trailShape.strokeColor = .clear
+        trailTexture = view?.texture(from: trailShape) ?? SKTexture()
+
+        // Border Cell
+        // Border Cell - Garden Fence Design
+        let fenceContainer = SKShapeNode(rectOf: size)
+        fenceContainer.fillColor = .clear
+        fenceContainer.strokeColor = .clear
+
+        // Draw Fence Plank
+        let plankPath = CGMutablePath()
+        // Bottom part
+        plankPath.move(to: CGPoint(x: -size.width / 2 + 2, y: -size.height / 2))
+        plankPath.addLine(to: CGPoint(x: size.width / 2 - 2, y: -size.height / 2))
+        // Sides
+        plankPath.addLine(to: CGPoint(x: size.width / 2 - 2, y: size.height / 2 - 6))
+        // Pointed Top
+        plankPath.addLine(to: CGPoint(x: 0, y: size.height / 2))
+        plankPath.addLine(to: CGPoint(x: -size.width / 2 + 2, y: size.height / 2 - 6))
+        plankPath.closeSubpath()
+
+        let fenceNode = SKShapeNode(path: plankPath)
+        fenceNode.fillColor = SKColor(red: 0.55, green: 0.35, blue: 0.15, alpha: 1.0)  // Wood Brown
+        fenceNode.strokeColor = SKColor(red: 0.35, green: 0.20, blue: 0.05, alpha: 1.0)  // Darker Brown Stroke
+        fenceNode.lineWidth = 1.5
+
+        // Wood grain details
+        let detailPath = CGMutablePath()
+        detailPath.move(to: CGPoint(x: 0, y: -size.height / 2 + 4))
+        detailPath.addLine(to: CGPoint(x: 0, y: size.height / 2 - 10))
+
+        let detailNode = SKShapeNode(path: detailPath)
+        detailNode.strokeColor = SKColor(red: 0.45, green: 0.25, blue: 0.10, alpha: 0.5)
+        detailNode.lineWidth = 1
+
+        fenceContainer.addChild(fenceNode)
+        fenceContainer.addChild(detailNode)
+
+        borderTexture = view?.texture(from: fenceContainer) ?? SKTexture()
+    }
+
+    func updateLabels() {
+        // UI is handled by SwiftUI overlay
+    }
     // MARK: - Lifecycle
 
     func playSound(_ type: SoundType) {
@@ -69,15 +131,13 @@ class GameScene: SKScene {
     }
 
     override func didMove(to view: SKView) {
-        self.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-
+        // Koordinat sistemi sol alt (0,0) olsun
+        self.anchorPoint = CGPoint(x: 0, y: 0)
 
         setupTextures()
         startLevel()
         setupGestures(view: view)
     }
-
-
 
     // MARK: - Level Setup
 
@@ -87,32 +147,61 @@ class GameScene: SKScene {
     }
 
     func startLevel() {
+        // Crash Önleme: View veya Texture'lar hazır değilse devam etme
+        guard let view = view else { return }
+        if emptyTexture == nil { setupTextures() }
+        if emptyTexture == nil { return }
+
         removeAllChildren()
 
         // Set Background Image
         let bgNode = SKSpriteNode(imageNamed: "Background")
-        bgNode.position = .zero // Center since anchor is 0.5,0.5
+        // Anchor (0,0) olduğu için arka planı ekranın ortasına taşıyoruz
+        bgNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
         bgNode.zPosition = -100
-        
+
         // Scale to fit
         let ratio = max(self.size.width / bgNode.size.width, self.size.height / bgNode.size.height)
         bgNode.setScale(ratio)
-        
-        // Use full screen dimensions
-        let availableWidth = self.size.width
-        let availableHeight = self.size.height
+        addChild(bgNode)
 
+        // TileMap anchor point ayarı (önemli!)
+        // TileMap varsayılan olarak (0.5, 0.5). Koordinat sistemimiz (0,0) olduğu için
+        // TileMap'in de sol alttan başlamasını istiyorsak pozisyonunu ayarlamalıyız.
+        // Veya TileMap'i logic olarak kullanıp visual olarak hücreleri tek tek ekliyorsak (ki öyle yapıyoruz: sprite node'lar yok, texture'lar tilemap içinde değil)
+
+        // Kodu inceledim: tileMap = SKTileMapNode(...) oluşturuluyor ama grid logic array olarak kullanılıyor.
+        // tileMap sadece snakeBody vs için parent.
+        // Ama 150-158 satırlarında grid array'i dolduruluyor.
+        // Görsel olarak borderlar nasıl çiziliyor?
+        // startLevel içinde 'setupTextures' ile texturelar oluşturuluyor ama border node'larını ekleyen bir döngü GÖREMİYORUM.
+
+        // AŞAĞIDA: createLevelObjects() veya benzeri bir yerde border node'ları eklenmeli.
+        // Kodun devamında 'drawBorder()' gibi bir şey var mı?
+        // Hayır, startLevel'ın sonunda bir döngü olmalı.
+
+        // Oraya da bakıp düzeltmem gerekebilir ama önce Anchor Point'i düzeltem.
+
+        // Calculate Visible Area based on ACTUAL scene size
+        // Use the smaller of view size or scene size to be safe
+        let availableWidth = size.width
+        let availableHeight = size.height
+
+        // Calculate Grid
+        // We want gridSize to be roughly 20-30 pts depending on screen
         // Dynamic Grid Size Calculation
         // We want exactly 'targetVisibleCols' inside the screen.
-        let targetVisibleCols: CGFloat = 15.0
+        let targetVisibleCols: CGFloat = 30.0
         gridSize = availableWidth / targetVisibleCols
-        
+
         let visibleCols = Int(targetVisibleCols)
-        let visibleRows = Int(ceil(availableHeight / gridSize))
-        
-        // Add 2 extra to cols and rows for OFF-SCREEN borders
-        cols = visibleCols + 2
-        rows = visibleRows + 2
+        // HUD için üstten boşluk bırak (Daha az boşluk: 110pt)
+        let hudMargin: CGFloat = 84.0
+        let visibleRows = Int(ceil((availableHeight - hudMargin) / gridSize))
+
+        // Ekrana tam sığmalı, dışarı taşmamalı
+        cols = visibleCols
+        rows = visibleRows
 
         grid = Array(repeating: Array(repeating: .empty, count: rows), count: cols)
 
@@ -147,32 +236,12 @@ class GameScene: SKScene {
 
         let totalMapWidth = CGFloat(cols) * gridSize
         let totalMapHeight = CGFloat(rows) * gridSize
-        
+
         tileMap.anchorPoint = .zero
 
-        // Center the map such that the borders are pushed out.
-        // The visible area starts at grid[1][1] (which is x=gridSize, y=gridSize in map coords)
-        // We want grid[1][1] to be at (-availableWidth/2, -availableHeight/2) relative to scene center?
-        // No, scene anchor is 0.5, 0.5. So center is (0,0).
-        // Left edge of screen is -width/2.
-        // Left edge of PLAYABLE area (col 1) should be at -width/2.
-        // Map origin (col 0) is at 0.
-        // tileMap.position.x + (1 * gridSize) = -width/2
-        // => tileMap.position.x = -width/2 - gridSize
-        
-        // Wait, let's verify map origin. SKTileMapNode centers tiles usually but we set anchor .zero? 
-        // SKTileMapNode local origin (0,0) depends on anchor. with anchor (0,0), it's bottom-left of the whole map.
-        // So col 0 starts at x=0. col 1 starts at x=gridSize.
-        
-        let xOffset = -(availableWidth / 2) - gridSize
-        let yOffset = -(availableHeight / 2) - gridSize
-        
-        // Fine tune to center vertically exactly if rows calculation had remainder
-        let verticalSlack = (CGFloat(visibleRows) * gridSize) - availableHeight
-        // We want to center the slack
-        let yCenteredOffset = yOffset - (verticalSlack / 2)
-
-        tileMap.position = CGPoint(x: xOffset, y: yCenteredOffset)
+        // Sahne anchor (0,0) olduğu için ve grid tam ekran boyutu olduğu için
+        // TileMap'i direkt (0,0) noktasına koyuyoruz.
+        tileMap.position = .zero
         addChild(tileMap)
         refreshTileMap()
 
@@ -180,31 +249,56 @@ class GameScene: SKScene {
         // GIF animasyonlu örümcek kullan
         if let animatedSpider = SKSpriteNode.createAnimatedSprite(
             gifNamed: "Spider",
-            size: CGSize(width: gridSize * 2.0, height: gridSize * 2.0)
+            size: CGSize(width: gridSize * 5.0, height: gridSize * 5.0)  // Grid küçüldüğü için çarpanı büyüttük
         ) {
             bugNode = animatedSpider
         } else {
             // Fallback: GIF yüklenemezse eski bug kullan
             print("⚠️ Spider.gif yüklenemedi, fallback Bug.png kullanılıyor")
             bugNode = SKSpriteNode(imageNamed: "Bug")
-            bugNode.size = CGSize(width: gridSize * 1.5, height: gridSize * 1.5)
+            bugNode.size = CGSize(width: gridSize * 4.0, height: gridSize * 4.0)
         }
-        
+
         bugNode.zPosition = 10
 
-        bugGridPos = (cols / 2, 0)
-        updateBugPosition()
+        // Görünürlük artırma efektleri
+        // 1. Glow efekti (parlak yeşil aura)
+        let glowNode = SKSpriteNode(texture: bugNode.texture)
+        glowNode.size = bugNode.size
+        glowNode.zPosition = -1
+        glowNode.alpha = 0.6
+        glowNode.color = .green
+        glowNode.colorBlendFactor = 0.8
+        bugNode.addChild(glowNode)
+
+        // Glow animasyonu (pulse effect)
+        let scaleUp = SKAction.scale(to: 1.2, duration: 0.5)
+        let scaleDown = SKAction.scale(to: 1.0, duration: 0.5)
+        let pulse = SKAction.sequence([scaleUp, scaleDown])
+        glowNode.run(SKAction.repeatForever(pulse))
+
+        // 2. Hafif renk tonu (GIF'i biraz daha canlı yapar)
+        bugNode.color = SKColor(red: 0.2, green: 1.0, blue: 0.3, alpha: 1.0)
+        bugNode.colorBlendFactor = 0.3  // %30 renk karışımı
+
+        // Böceği ekranın en altına, ortaya yerleştir (Bix Challenge tarzı)
+        bugGridPos = (cols / 2, 0)  // En altta, ortada (border üzerinde)
+        let bugX = CGFloat(bugGridPos.x) * gridSize + gridSize / 2
+        let bugY = CGFloat(bugGridPos.y) * gridSize + gridSize / 2
+        bugNode.position = CGPoint(x: bugX, y: bugY)
         tileMap.addChild(bugNode)
-        
+
         // Ağ efekti setup
         setupBugTrailEffect()
-        
-        // --- Trail Line Setup ---
+
+        // --- Trail Line Setup (Bix Challenge Style) ---
         activeTrailNode = SKShapeNode()
-        activeTrailNode.strokeColor = .clear  // Görünmez yap
-        activeTrailNode.lineWidth = 0  // Çizgi kalınlığı 0
+        activeTrailNode.strokeColor = SKColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)  // Parlak mavi
+        activeTrailNode.lineWidth = 3.0  // Kalın çizgi
         activeTrailNode.lineCap = .round
+        activeTrailNode.lineJoin = .round
         activeTrailNode.zPosition = 5
+        activeTrailNode.glowWidth = 2.0  // Glow effect
         activeTrailPath = CGMutablePath()
         tileMap.addChild(activeTrailNode)
 
@@ -214,18 +308,18 @@ class GameScene: SKScene {
         // UI
         // UI
         // UI is now handled by SwiftUI via GameManager state
-        
+
         currentDirection = .none
         nextDirection = .none
         currentState = .ready
 
         GameManager.shared.percentCovered = 0.0
-        
+
         // Initial Sync based on GameManager
         if GameManager.shared.isPlaying {
-             currentState = .playing
+            currentState = .playing
         } else {
-             currentState = .ready
+            currentState = .ready
         }
     }
 
@@ -235,9 +329,9 @@ class GameScene: SKScene {
         snakeBody.removeAll()
         snakeHistory.removeAll()
 
-        // Find valid spawn point (Nearest to center that is EMPTY)
-        var spawnX = cols / 2
-        var spawnY = rows / 2
+        // Find valid spawn point - Snake'i sol üst köşeye yerleştir (böcekle çakışmasın)
+        var spawnX = cols / 4  // Sol taraf
+        var spawnY = (rows * 3) / 4  // Üst taraf
 
         // If center is blocked (Filled/Border/Trail), search spiral
         if grid[spawnX][spawnY] != .empty {
@@ -271,7 +365,7 @@ class GameScene: SKScene {
         // Create Body Segments
         for _ in 0..<snakeBodyCount {
             let seg = SKSpriteNode(imageNamed: "SnakeBody")
-            seg.size = CGSize(width: gridSize, height: gridSize)
+            seg.size = CGSize(width: gridSize * 2.5, height: gridSize * 2.5)  // Grid küçüldüğü için büyüttük
             seg.zPosition = 8
             seg.position = snakePosition
             tileMap.addChild(seg)
@@ -280,7 +374,7 @@ class GameScene: SKScene {
 
         // Create Head
         snakeNode = SKSpriteNode(imageNamed: "SnakeHead")
-        snakeNode.size = CGSize(width: gridSize * 1.2, height: gridSize * 1.2)
+        snakeNode.size = CGSize(width: gridSize * 3.0, height: gridSize * 3.0)  // Grid küçüldüğü için büyütük
         snakeNode.zPosition = 9
         snakeNode.position = snakePosition
 
@@ -300,21 +394,21 @@ class GameScene: SKScene {
         if GameManager.shared.isPlaying && currentState == .ready {
             currentState = .playing
         }
-    
+
         guard currentState == .playing else {
             lastUpdateTime = currentTime
             return
         }
-        
+
         if lastUpdateTime == 0 { lastUpdateTime = currentTime }
         let dt = CGFloat(currentTime - lastUpdateTime)
         lastUpdateTime = currentTime
-        
+
         // Cap dt to prevent jumps
         let safeDt = min(dt, 0.1)
 
         moveBug(dt: safeDt)
-        moveSnake(dt: 1.0/60.0) // Keep snake simplified fixed step for internal physics consistency or sync with dt
+        moveSnake(dt: 1.0 / 60.0)  // Keep snake simplified fixed step for internal physics consistency or sync with dt
 
         checkWinCondition()
         updateLabels()
@@ -323,23 +417,23 @@ class GameScene: SKScene {
     func moveBug(dt: CGFloat) {
         // 1. Handle Input Turning (Immediate)
         if nextDirection != .none && nextDirection != currentDirection {
-             // Prevent u-turn logic
-             var canTurn = true
-             if currentDirection == .up && nextDirection == .down { canTurn = false }
-             if currentDirection == .down && nextDirection == .up { canTurn = false }
-             if currentDirection == .left && nextDirection == .right { canTurn = false }
-             if currentDirection == .right && nextDirection == .left { canTurn = false }
-             
-             if canTurn || currentDirection == .none {
-                 currentDirection = nextDirection
-                 nextDirection = .none
-                 
-                 let rotateAction = SKAction.rotate(
-                    toAngle: currentDirection.angle, duration: 0.1, shortestUnitArc: true)
-                 bugNode.run(rotateAction)
-             }
+            // Prevent u-turn logic
+            var canTurn = true
+            if currentDirection == .up && nextDirection == .down { canTurn = false }
+            if currentDirection == .down && nextDirection == .up { canTurn = false }
+            if currentDirection == .left && nextDirection == .right { canTurn = false }
+            if currentDirection == .right && nextDirection == .left { canTurn = false }
+
+            if canTurn || currentDirection == .none {
+                currentDirection = nextDirection
+                nextDirection = .none
+
+                let rotateAction = SKAction.rotate(
+                    toAngle: currentDirection.angle, duration: 0.05, shortestUnitArc: true)  // Bix Challenge tarzı hızlı dönüş
+                bugNode.run(rotateAction)
+            }
         }
-        
+
         guard currentDirection != .none else { return }
 
         // 2. Calculate new position
@@ -352,43 +446,62 @@ class GameScene: SKScene {
         case .right: dx = 1
         default: break
         }
-        
+
         let distance = bugSpeed * dt
         let currentPos = bugNode.position
         var nextPos = CGPoint(x: currentPos.x + dx * distance, y: currentPos.y + dy * distance)
-        
-        // 3. Wall Clamping (Soft Limits)
-        // Map bounds in local tileMap coordinates
-        let mapWidth = CGFloat(cols) * gridSize
-        let mapHeight = CGFloat(rows) * gridSize
-        let radius = gridSize / 2
-        
-        // Clamp
-        nextPos.x = max(radius, min(mapWidth - radius, nextPos.x))
-        nextPos.y = max(radius, min(mapHeight - radius, nextPos.y))
-        
-        // 4. Collision/Logic Trigger based on Grid Cell
-        // We use the CENTER of the bug to determine its "Logic Cell"
-        let logicX = Int(nextPos.x / gridSize)
-        let logicY = Int(nextPos.y / gridSize)
-        
-        // Update Postion
-        bugNode.position = nextPos
-        
-        // Track Logic Changes
-        if logicX != bugGridPos.x || logicY != bugGridPos.y {
-             handleGridTransition(newX: logicX, newY: logicY)
+
+        // 3. Kesin Sınırlandırma (Hard Clamp)
+        // Harita sınırlarını al
+        // Güvenlik: Grid boyutu ile Sahne boyutu arasından küçük olanı seç
+        // Böylece grid taşsa bile sahne dışına çıkamaz, sahne küçükse grid dışına çıkamaz.
+        let mapWidth = min(CGFloat(cols) * gridSize, size.width)
+        let mapHeight = min(CGFloat(rows) * gridSize, size.height)
+        let radius = gridSize / 2  // Karakter yarıçapı
+
+        // Önce hareket ettir
+        var finalPos = nextPos
+
+        // Sonra sınırların içine zorla (Asla dışarı çıkamaz)
+        // Sol ve Alt sınır (0 yerine radius kadar içeride durmalı)
+        if finalPos.x < radius { finalPos.x = radius }
+        if finalPos.y < radius { finalPos.y = radius }
+
+        // Sağ ve Üst sınır (Width/Height yerine radius kadar içeride durmalı)
+        if finalPos.x > mapWidth - radius { finalPos.x = mapWidth - radius }
+        if finalPos.y > mapHeight - radius { finalPos.y = mapHeight - radius }
+
+        // Pozisyonu güncelle
+        bugNode.position = finalPos
+
+        // 4. Logic Update
+        let logicX = Int(bugNode.position.x / gridSize)
+        let logicY = Int(bugNode.position.y / gridSize)
+
+        // Ekstra Güvenlik: Eğer logic grid dışına çıkarsa düzelt
+        // Logic değerleri cols/rows ile sınırlı olmalı
+        let safeLogicX = max(0, min(cols - 1, logicX))
+        let safeLogicY = max(0, min(rows - 1, logicY))
+
+        if safeLogicX != logicX || safeLogicY != logicY {
+            // Logic koordinatları fiziksel koordinatlara uymuyorsa (floating point hatası vs)
+            // handleGridTransition güvenli değerlerle çağrılacak.
         }
-        
+
+        // Track Logic Changes
+        if safeLogicX != bugGridPos.x || safeLogicY != bugGridPos.y {
+            handleGridTransition(newX: safeLogicX, newY: safeLogicY)
+        }
+
         // 5. Update Visual Trail
         if grid[bugGridPos.x][bugGridPos.y] == .trail {
             // Add point to path
             if activeTrailPath.isEmpty {
-                 activeTrailPath.move(to: currentPos)
+                activeTrailPath.move(to: currentPos)
             }
             activeTrailPath.addLine(to: nextPos)
             activeTrailNode.path = activeTrailPath
-            
+
             // Ağ efektini aktif et
             updateBugTrailEmission(isActive: true)
         } else {
@@ -398,23 +511,23 @@ class GameScene: SKScene {
                 activeTrailPath = CGMutablePath()
                 activeTrailNode.path = nil
             }
-            
+
             // Ağ efektini kapat
             updateBugTrailEmission(isActive: false)
         }
     }
-    
+
     func handleGridTransition(newX: Int, newY: Int) {
         if newX < 0 || newX >= cols || newY < 0 || newY >= rows { return }
-        
+
         let targetCell = grid[newX][newY]
-        
+
         // Self Collision (Trail)
         if targetCell == .trail {
             die()
             return
         }
-        
+
         // Entering Filled/Border (Safe Zone or Closing Loop)
         if targetCell == .filled || targetCell == .border {
             let currentCell = grid[bugGridPos.x][bugGridPos.y]
@@ -422,11 +535,11 @@ class GameScene: SKScene {
                 // Closing Loop!
                 bugGridPos = (newX, newY)
                 fillArea()
-                
+
                 // Clear visual trail
                 activeTrailPath = CGMutablePath()
                 activeTrailNode.path = nil
-                
+
                 // Stop movement to emphasize completion
                 currentDirection = .none
                 return
@@ -435,20 +548,20 @@ class GameScene: SKScene {
             bugGridPos = (newX, newY)
             return
         }
-        
+
         // Moving into Empty (Start/Continue Trail)
         if targetCell == .empty {
             // Mark new cell
             grid[newX][newY] = .trail
             // We DO NOT update visual tile here to avoid "blocks" appearing.
-            // But we MUST enable logic for enemies. 
+            // But we MUST enable logic for enemies.
             // Optional: Show faint grid trail? NO, user wants to remove square logic.
             // We rely on SKShapeNode for visuals.
-            
+
             bugGridPos = (newX, newY)
         }
     }
-    
+
     // Legacy mapping (kept for reference or if we need to snap)
     func updateBugPosition() {
         // Now handled continuously by updates
@@ -544,27 +657,10 @@ class GameScene: SKScene {
 
         // Check collision HEAD
         if snakeNode.intersects(bugNode) {
-            // Safe Zone Logic: If bug is on border or filled area, it's immune
-            // Safe Zone Logic: If bug is on/near border or filled area, it's immune
-            let bx = bugGridPos.x
-            let by = bugGridPos.y
-            var isSafe = false
-
-            // Allow safety if bug is even adjacent to safe zones (Visual leniency)
-            let neighborOffsets = [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
-            for offset in neighborOffsets {
-                let nx = bx + offset.0
-                let ny = by + offset.1
-                if nx >= 0 && nx < cols && ny >= 0 && ny < rows {
-                    let cell = grid[nx][ny]
-                    if cell == .border || cell == .filled {
-                        isSafe = true
-                        break
-                    }
-                }
-            }
-
-            if !isSafe {
+            // Sadece çizgi çizerken (Trail üzerindeyken) ölebilir.
+            // Güvenli bölgede (Border veya Filled) ise yılan içinden geçip gider.
+            let cell = grid[bugGridPos.x][bugGridPos.y]
+            if cell == .trail {
                 die()
                 return
             }
@@ -573,8 +669,13 @@ class GameScene: SKScene {
         // Check collision BODY
         for segment in snakeBody {
             if segment.intersects(bugNode) {
-                die()
-                return
+                // Gövde çarpışmasında da aynı kural geçerli:
+                // Sadece çizgi çizerken (Trail üzerindeyken) ölebilir.
+                let cell = grid[bugGridPos.x][bugGridPos.y]
+                if cell == .trail {
+                    die()
+                    return
+                }
             }
         }
     }
@@ -587,21 +688,21 @@ class GameScene: SKScene {
         var queue: [(Int, Int)] = []
 
         // Robust Start: Search for an empty cell around the snake
-        // The snake might be slightly overlapping a border/trail visually, 
+        // The snake might be slightly overlapping a border/trail visually,
         // but it must be centered in or near an empty valid play area.
         let searchRadius = 2
         var foundStart = false
-        
+
         let centerX = max(0, min(cols - 1, snakeGridX))
         let centerY = max(0, min(rows - 1, snakeGridY))
-        
+
         // Spiral search or simple nested loop for start point
         searchLoop: for r in 0...searchRadius {
             for dx in -r...r {
                 for dy in -r...r {
                     let nx = centerX + dx
                     let ny = centerY + dy
-                    
+
                     if nx >= 0 && nx < cols && ny >= 0 && ny < rows {
                         if grid[nx][ny] == .empty {
                             queue.append((nx, ny))
@@ -613,12 +714,12 @@ class GameScene: SKScene {
                 }
             }
         }
-        
+
         if !foundStart {
-             // Fallback: If snake is somehow completely entombed (should be impossible if alive),
-             // do not fill anything to avoid destroying the game state.
-             print("Critical: Snake Logic Error - No empty space found around snake.")
-             return
+            // Fallback: If snake is somehow completely entombed (should be impossible if alive),
+            // do not fill anything to avoid destroying the game state.
+            print("Critical: Snake Logic Error - No empty space found around snake.")
+            return
         }
 
         while !queue.isEmpty {
@@ -636,11 +737,11 @@ class GameScene: SKScene {
         }
 
         var filledCount = 0
-        let totalCells = (cols - 4) * (rows - 4) // Approx playable area count for percent logic
+        let totalCells = (cols - 4) * (rows - 4)  // Approx playable area count for percent logic
         // (Adjusted totalCells logic to be more accurate if needed, but keeping simple for now)
-        // Actually total cells should be count of non-border cells? 
+        // Actually total cells should be count of non-border cells?
         // Let's stick to simple count for now or fix visible area count.
-        
+
         for x in 0..<cols {
             for y in 0..<rows {
                 if grid[x][y] == .trail {
@@ -648,10 +749,10 @@ class GameScene: SKScene {
                 } else if grid[x][y] == .empty && !visited[x][y] {
                     grid[x][y] = .filled
                 }
-                
+
                 // Only count visible filled cells for score
                 // i.e. not the outer borders we added
-                if grid[x][y] == .filled { 
+                if grid[x][y] == .filled {
                     // exclude outer padding from stats
                     if x > 0 && x < cols - 1 && y > 0 && y < rows - 1 {
                         filledCount += 1
@@ -662,7 +763,7 @@ class GameScene: SKScene {
 
         refreshTileMap()
         let pct = Float(filledCount) / Float(totalCells) * 100.0
-        
+
         DispatchQueue.main.async {
             GameManager.shared.percentCovered = pct
             GameManager.shared.score += 100
@@ -673,7 +774,7 @@ class GameScene: SKScene {
     func die() {
         playSound(.crash)  // Crash sound
         lives -= 1
-        
+
         DispatchQueue.main.async {
             GameManager.shared.lives = self.lives
         }
@@ -697,7 +798,7 @@ class GameScene: SKScene {
                 }
             }
             refreshTileMap()
-            
+
             // Clear web trail
             clearWebTrail()
 
@@ -705,9 +806,9 @@ class GameScene: SKScene {
             currentState = .ready
             currentDirection = .none
             nextDirection = .none
-            
+
             DispatchQueue.main.async {
-                GameManager.shared.isPlaying = false // Paused for ready
+                GameManager.shared.isPlaying = false  // Paused for ready
                 // Maybe show "Tap to Continue" overlay?
                 // For now we just wait for tap logic in ContentView
             }
@@ -715,19 +816,19 @@ class GameScene: SKScene {
     }
 
     func resetPositions() {
-        // Bug position reset
-        bugGridPos = (cols / 2, 0)
+        // Bug position reset - ekranın en altına, ortaya yerleştir
+        bugGridPos = (cols / 2, 0)  // En altta, ortada (border üzerinde)
         let x = CGFloat(bugGridPos.x) * gridSize + gridSize / 2
         let y = CGFloat(bugGridPos.y) * gridSize + gridSize / 2
         bugNode.position = CGPoint(x: x, y: y)
-        
+
         currentDirection = .none
         nextDirection = .none
-        
+
         // Reset Trail
         activeTrailPath = CGMutablePath()
         activeTrailNode.path = nil
-        
+
         // Clear web trail
         clearWebTrail()
 
@@ -748,11 +849,9 @@ class GameScene: SKScene {
         }
     }
 
-
-
     func gameOver(win: Bool) {
         currentState = win ? .levelComplete : .gameOver
-        
+
         DispatchQueue.main.async {
             if win {
                 GameManager.shared.levelComplete()
