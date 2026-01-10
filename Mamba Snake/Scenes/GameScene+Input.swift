@@ -29,66 +29,7 @@ extension GameScene {
     }
 
     func handleInputTap(at viewLocation: CGPoint) {
-        let sceneLoc = self.convertPoint(fromView: viewLocation)
-        let nodes = self.nodes(at: sceneLoc)
-
-        for node in nodes {
-            // Check for buttons (Handle label inside button case)
-            if node.name == "pauseBtn" || node.parent?.name == "pauseBtn" {
-                togglePause()
-                return
-            }
-            if node.name == "resumeBtn" || node.parent?.name == "resumeBtn" {
-                togglePause()
-                return
-            }
-
-            if node.name == "credits" {
-                if let url = URL(string: "https://erdincyilmaz.netlify.app/") {
-                    #if canImport(UIKit)
-                        UIApplication.shared.open(url)
-                    #elseif os(macOS)
-                        NSWorkspace.shared.open(url)
-                    #endif
-                }
-                return
-            }
-        }
-
-        if currentState == .ready {
-            playSound(.start)
-            currentState = .playing
-            messageLabel.isHidden = true
-            if landingNode != nil { landingNode.removeFromParent() }
-
-            self.isPaused = false
-
-            if snakeVelocity == .zero {
-                let speed = snakeSpeed
-                let randomDx: CGFloat = Bool.random() ? speed : -speed
-                let randomDy: CGFloat = Bool.random() ? speed : -speed
-                snakeVelocity = CGVector(dx: randomDx, dy: randomDy)
-            }
-        } else if currentState == .gameOver || currentState == .levelComplete {
-            let fadeOut = SKAction.fadeOut(withDuration: 0.2)
-            if gameOverPanel != nil && !gameOverPanel.isHidden {
-                gameOverPanel.run(fadeOut) {
-                    self.gameOverPanel.isHidden = true
-                    if self.currentState == .gameOver {
-                        self.resetGame()
-                    } else if self.currentState == .levelComplete {
-                        GameManager.shared.nextLevel()
-                    }
-                    self.startLevel()
-                }
-            } else {
-                if currentState == .gameOver {
-                    resetGame()
-                } else if currentState == .levelComplete {
-                    GameManager.shared.nextLevel()
-                }
-                startLevel()
-            }
-        }
+        // Legacy UI tap handling removed.
+        // Input is now handled by SwiftUI Overlay.
     }
 }

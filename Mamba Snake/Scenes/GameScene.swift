@@ -21,33 +21,23 @@ class GameScene: SKScene {
     var gridSize: CGFloat = 25.0
     var cols: Int = 0
     var rows: Int = 0
-    let moveSpeed: TimeInterval = 0.05  // Faster for smoother control
+    var bugSpeed: CGFloat = 150.0 // Smooth movement speed
     let snakeSpeed: CGFloat = 160.0
 
     // MARK: - Game State
     var grid: [[CellType]] = []
     var currentDirection: Direction = .none
     var nextDirection: Direction = .none
-    var lastMoveTime: TimeInterval = 0
+    var lastUpdateTime: TimeInterval = 0
     var currentState: GameState = .ready
 
     // MARK: - Nodes
     var tileMap: SKTileMapNode!
     var bugNode: SKSpriteNode!
     var snakeNode: SKSpriteNode!
-    var uiLayer: SKNode!
+    var activeTrailNode: SKShapeNode!
+    var activeTrailPath: CGMutablePath!
 
-    // UI Nodes
-    var gameOverPanel: SKNode!
-    var pausePanel: SKNode!
-    var hudNode: SKNode!
-    var landingNode: SKNode!
-
-    // UI Labels
-    var scoreLabel: SKLabelNode!
-    var livesLabel: SKLabelNode!
-    var percentLabel: SKLabelNode!
-    var messageLabel: SKLabelNode!
 
     // Entities
     var bugGridPos: (x: Int, y: Int) = (0, 0)
@@ -182,32 +172,34 @@ class GameScene: SKScene {
         bugGridPos = (cols / 2, 0)
         updateBugPosition()
         tileMap.addChild(bugNode)
+        
+        // --- Trail Line Setup ---
+        activeTrailNode = SKShapeNode()
+        activeTrailNode.strokeColor = .cyan
+        activeTrailNode.lineWidth = gridSize * 0.4
+        activeTrailNode.lineCap = .round
+        activeTrailNode.zPosition = 5
+        activeTrailPath = CGMutablePath()
+        tileMap.addChild(activeTrailNode)
 
         // --- Snake Setup ---
         setupSnake()
 
         // UI
-        setupUI(topMargin: topMargin)
-
+        // UI
+        // UI is now handled by SwiftUI via GameManager state
+        
         currentDirection = .none
         nextDirection = .none
         currentState = .ready
 
         GameManager.shared.percentCovered = 0.0
-        updateLabels()
-
-        if GameManager.shared.level == 1 && GameManager.shared.score == 0 {
-            messageLabel.isHidden = true
-            showLandingPage()
+        
+        // Initial Sync based on GameManager
+        if GameManager.shared.isPlaying {
+             currentState = .playing
         } else {
-            messageLabel.text = "TAP TO START"
-            messageLabel.isHidden = false
-
-            let pulse = SKAction.sequence([
-                SKAction.scale(to: 1.1, duration: 0.5),
-                SKAction.scale(to: 1.0, duration: 0.5),
-            ])
-            messageLabel.run(SKAction.repeatForever(pulse), withKey: "pulse")
+             currentState = .ready
         }
     }
 
@@ -278,95 +270,156 @@ class GameScene: SKScene {
     // MARK: - Game Loop & Logic
 
     override func update(_ currentTime: TimeInterval) {
-        guard currentState == .playing else { return }
-
-        // Bug Movement
-        if currentTime - lastMoveTime > moveSpeed {
-            moveBug()
-            lastMoveTime = currentTime
+        // Sync Helper: If manager says playing but we are ready, start!
+        if GameManager.shared.isPlaying && currentState == .ready {
+            currentState = .playing
         }
+    
+        guard currentState == .playing else {
+            lastUpdateTime = currentTime
+            return
+        }
+        
+        if lastUpdateTime == 0 { lastUpdateTime = currentTime }
+        let dt = CGFloat(currentTime - lastUpdateTime)
+        lastUpdateTime = currentTime
+        
+        // Cap dt to prevent jumps
+        let safeDt = min(dt, 0.1)
 
-        // Snake Movement
-        let dt = 1.0 / 60.0
-        moveSnake(dt: dt)
+        moveBug(dt: safeDt)
+        moveSnake(dt: 1.0/60.0) // Keep snake simplified fixed step for internal physics consistency or sync with dt
 
         checkWinCondition()
         updateLabels()
     }
 
-    func moveBug() {
-        if nextDirection != .none {
-            var canTurn = true
-            if currentDirection == .up && nextDirection == .down { canTurn = false }
-            if currentDirection == .down && nextDirection == .up { canTurn = false }
-            if currentDirection == .left && nextDirection == .right { canTurn = false }
-            if currentDirection == .right && nextDirection == .left { canTurn = false }
-            if canTurn { currentDirection = nextDirection }
+    func moveBug(dt: CGFloat) {
+        // 1. Handle Input Turning (Immediate)
+        if nextDirection != .none && nextDirection != currentDirection {
+             // Prevent u-turn logic
+             var canTurn = true
+             if currentDirection == .up && nextDirection == .down { canTurn = false }
+             if currentDirection == .down && nextDirection == .up { canTurn = false }
+             if currentDirection == .left && nextDirection == .right { canTurn = false }
+             if currentDirection == .right && nextDirection == .left { canTurn = false }
+             
+             if canTurn || currentDirection == .none {
+                 currentDirection = nextDirection
+                 nextDirection = .none
+                 
+                 let rotateAction = SKAction.rotate(
+                    toAngle: currentDirection.angle, duration: 0.1, shortestUnitArc: true)
+                 bugNode.run(rotateAction)
+             }
         }
-
+        
         guard currentDirection != .none else { return }
 
-        // Rotate Bug to face direction
-        let rotateAction = SKAction.rotate(
-            toAngle: currentDirection.angle, duration: 0.1, shortestUnitArc: true)
-        bugNode.run(rotateAction)
-
-        var newX = bugGridPos.x
-        var newY = bugGridPos.y
-
+        // 2. Calculate new position
+        var dx: CGFloat = 0
+        var dy: CGFloat = 0
         switch currentDirection {
-        case .up: newY += 1
-        case .down: newY -= 1
-        case .left: newX -= 1
-        case .right: newX += 1
+        case .up: dy = 1
+        case .down: dy = -1
+        case .left: dx = -1
+        case .right: dx = 1
         default: break
         }
-
+        
+        let distance = bugSpeed * dt
+        let currentPos = bugNode.position
+        var nextPos = CGPoint(x: currentPos.x + dx * distance, y: currentPos.y + dy * distance)
+        
+        // 3. Wall Clamping (Soft Limits)
+        // Map bounds in local tileMap coordinates
+        let mapWidth = CGFloat(cols) * gridSize
+        let mapHeight = CGFloat(rows) * gridSize
+        let radius = gridSize / 2
+        
+        // Clamp
+        nextPos.x = max(radius, min(mapWidth - radius, nextPos.x))
+        nextPos.y = max(radius, min(mapHeight - radius, nextPos.y))
+        
+        // 4. Collision/Logic Trigger based on Grid Cell
+        // We use the CENTER of the bug to determine its "Logic Cell"
+        let logicX = Int(nextPos.x / gridSize)
+        let logicY = Int(nextPos.y / gridSize)
+        
+        // Update Postion
+        bugNode.position = nextPos
+        
+        // Track Logic Changes
+        if logicX != bugGridPos.x || logicY != bugGridPos.y {
+             handleGridTransition(newX: logicX, newY: logicY)
+        }
+        
+        // 5. Update Visual Trail
+        if grid[bugGridPos.x][bugGridPos.y] == .trail {
+            // Add point to path
+            if activeTrailPath.isEmpty {
+                 activeTrailPath.move(to: currentPos)
+            }
+            activeTrailPath.addLine(to: nextPos)
+            activeTrailNode.path = activeTrailPath
+        } else {
+            // Not in trail mode (e.g. safe zone), clear path or keep it?
+            // If we just entered safe zone, 'handleGridTransition' should have triggered fillArea
+            if !activeTrailPath.isEmpty && grid[bugGridPos.x][bugGridPos.y] != .trail {
+                activeTrailPath = CGMutablePath()
+                activeTrailNode.path = nil
+            }
+        }
+    }
+    
+    func handleGridTransition(newX: Int, newY: Int) {
         if newX < 0 || newX >= cols || newY < 0 || newY >= rows { return }
-
+        
         let targetCell = grid[newX][newY]
-
+        
+        // Self Collision (Trail)
         if targetCell == .trail {
             die()
             return
         }
-
-        // MOVEMENT RESTRICTION: Cannot enter filled area unless closing a loop or sliding along safe zone
-        if targetCell == .filled {
+        
+        // Entering Filled/Border (Safe Zone or Closing Loop)
+        if targetCell == .filled || targetCell == .border {
             let currentCell = grid[bugGridPos.x][bugGridPos.y]
-            // Allow if drawing (Closing loop) OR if already safe (Sliding along filled/border)
-            if currentCell != .trail && currentCell != .filled && currentCell != .border {
-                // Block movement into filled zone if trying to enter from outside without drawing
-                return
-            }
-        }
-
-        if targetCell == .empty {
-            grid[newX][newY] = .trail
-            updateSingleTile(x: newX, y: newY)
-            bugGridPos = (newX, newY)
-        } else {
-            // Target is Border or Filled (closing loop)
-            let currentCell = grid[bugGridPos.x][bugGridPos.y]
-
             if currentCell == .trail {
-                // Closed Loop
+                // Closing Loop!
                 bugGridPos = (newX, newY)
                 fillArea()
+                
+                // Clear visual trail
+                activeTrailPath = CGMutablePath()
+                activeTrailNode.path = nil
+                
+                // Stop movement to emphasize completion
                 currentDirection = .none
-                nextDirection = .none
-            } else {
-                // Moving along border or safe zone
-                bugGridPos = (newX, newY)
+                return
             }
+            // Just moving inside safe zone
+            bugGridPos = (newX, newY)
+            return
         }
-        updateBugPosition()
+        
+        // Moving into Empty (Start/Continue Trail)
+        if targetCell == .empty {
+            // Mark new cell
+            grid[newX][newY] = .trail
+            // We DO NOT update visual tile here to avoid "blocks" appearing.
+            // But we MUST enable logic for enemies. 
+            // Optional: Show faint grid trail? NO, user wants to remove square logic.
+            // We rely on SKShapeNode for visuals.
+            
+            bugGridPos = (newX, newY)
+        }
     }
-
+    
+    // Legacy mapping (kept for reference or if we need to snap)
     func updateBugPosition() {
-        let x = CGFloat(bugGridPos.x) * gridSize + gridSize / 2
-        let y = CGFloat(bugGridPos.y) * gridSize + gridSize / 2
-        bugNode.position = CGPoint(x: x, y: y)
+        // Now handled continuously by updates
     }
 
     func moveSnake(dt: CGFloat) {
@@ -539,15 +592,21 @@ class GameScene: SKScene {
 
         refreshTileMap()
         let pct = Float(filledCount) / Float(totalCells) * 100.0
-        GameManager.shared.percentCovered = pct
-        GameManager.shared.score += 100
+        
+        DispatchQueue.main.async {
+            GameManager.shared.percentCovered = pct
+            GameManager.shared.score += 100
+        }
         playSound(.score)  // Score/Confirm
     }
 
     func die() {
         playSound(.crash)  // Crash sound
         lives -= 1
-        GameManager.shared.lives = lives
+        
+        DispatchQueue.main.async {
+            GameManager.shared.lives = self.lives
+        }
 
         // Shake Camera
         let shake = SKAction.sequence([
@@ -573,97 +632,58 @@ class GameScene: SKScene {
             currentState = .ready
             currentDirection = .none
             nextDirection = .none
-            snakeVelocity = .zero  // Stop moving
-
-            messageLabel.text = "TAP TO CONTINUE"
-            messageLabel.fontColor = .white
-            messageLabel.zPosition = 1000
-            messageLabel.isHidden = false
-            // Ensure pulse animation is running
-            if messageLabel.action(forKey: "pulse") == nil {
-                let pulse = SKAction.sequence([
-                    SKAction.scale(to: 1.1, duration: 0.5),
-                    SKAction.scale(to: 1.0, duration: 0.5),
-                ])
-                messageLabel.run(SKAction.repeatForever(pulse), withKey: "pulse")
+            
+            DispatchQueue.main.async {
+                GameManager.shared.isPlaying = false // Paused for ready
+                // Maybe show "Tap to Continue" overlay?
+                // For now we just wait for tap logic in ContentView
             }
         }
     }
 
     func resetPositions() {
+        // Bug position reset
         bugGridPos = (cols / 2, 0)
-        updateBugPosition()
+        let x = CGFloat(bugGridPos.x) * gridSize + gridSize / 2
+        let y = CGFloat(bugGridPos.y) * gridSize + gridSize / 2
+        bugNode.position = CGPoint(x: x, y: y)
+        
         currentDirection = .none
+        nextDirection = .none
+        
+        // Reset Trail
+        activeTrailPath = CGMutablePath()
+        activeTrailNode.path = nil
 
         // Reset rotation
         bugNode.zRotation = 0
 
         // Re-setup snake fully to reset body history and positions
         setupSnake()
-
-        // Randomize direction handled in handleTap if needed
-        // snakeVelocity = ... (Removed to prevent override)
     }
 
     func togglePause() {
         if currentState == .playing {
             currentState = .paused
-            showPausePanel()
+            DispatchQueue.main.async { GameManager.shared.isPaused = true }
         } else if currentState == .paused {
             currentState = .playing
-            hidePausePanel()
+            DispatchQueue.main.async { GameManager.shared.isPaused = false }
         }
     }
 
-    func showPausePanel() {
-        if pausePanel == nil { setupPausePanel() }
-        pausePanel.isHidden = false
-        pausePanel.alpha = 0
-        pausePanel.run(SKAction.fadeIn(withDuration: 0.2))
-        
-        // Scale effect
-        pausePanel.setScale(0.8)
-        pausePanel.run(SKAction.scale(to: 1.0, duration: 0.2))
-    }
 
-    func hidePausePanel() {
-        if pausePanel != nil {
-            pausePanel.run(SKAction.fadeOut(withDuration: 0.2)) {
-                self.pausePanel.isHidden = true
-            }
-        }
-    }
 
     func gameOver(win: Bool) {
         currentState = win ? .levelComplete : .gameOver
-
-        // Update Panel Content
-        // Ensure panel exists in case setupUI ran before
-        if gameOverPanel == nil { setupGameOverPanel() }
-
-        if let panel = gameOverPanel.children.first(where: { $0.children.count > 0 }) {  // The background container
-            if let title = panel.childNode(withName: "goTitle") as? SKLabelNode {
-                title.text = win ? "LEVEL COMPLETE!" : "GAME OVER"
-                title.fontColor = win ? .green : .red
-            }
-            if let sVal = panel.childNode(withName: "goScore") as? SKLabelNode {
-                sVal.text = "\(GameManager.shared.score)"
-            }
-            if let lVal = panel.childNode(withName: "goLevel") as? SKLabelNode {
-                lVal.text = "\(GameManager.shared.level)"
+        
+        DispatchQueue.main.async {
+            if win {
+                GameManager.shared.levelComplete()
+            } else {
+                GameManager.shared.gameOver()
             }
         }
-
-        messageLabel.isHidden = true
-        gameOverPanel.isHidden = false
-        gameOverPanel.alpha = 0
-        gameOverPanel.run(SKAction.fadeIn(withDuration: 0.3))
-
-        // Scale effect for panel
-        gameOverPanel.setScale(0.8)
-        let scaleUp = SKAction.scale(to: 1.0, duration: 0.4)
-        scaleUp.timingMode = .easeOut
-        gameOverPanel.run(scaleUp)
     }
 
     func checkWinCondition() {
