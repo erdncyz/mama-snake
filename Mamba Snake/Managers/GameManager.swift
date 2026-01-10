@@ -9,7 +9,6 @@ class GameManager {
     var percentCovered: Float = 0.0
     var level: Int = 1
 
-    // Constants
     let targetPercent: Float = 75.0
 
     func reset() {
@@ -22,6 +21,5 @@ class GameManager {
     func nextLevel() {
         level += 1
         percentCovered = 0.0
-        // Maybe increase difficulty
     }
 }
