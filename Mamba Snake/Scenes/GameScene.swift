@@ -37,6 +37,7 @@ class GameScene: SKScene {
     var snakeNode: SKSpriteNode!
     var activeTrailNode: SKShapeNode!
     var activeTrailPath: CGMutablePath!
+    var bugTrailEmitter: SKEmitterNode!
 
 
     // Entities
@@ -164,19 +165,33 @@ class GameScene: SKScene {
         addChild(tileMap)
         refreshTileMap()
 
-        // --- Bug Setup ---
-        bugNode = SKSpriteNode(imageNamed: "Bug")
-        bugNode.size = CGSize(width: gridSize, height: gridSize)
+        // --- Bug Setup (Animated Spider) ---
+        // GIF animasyonlu örümcek kullan
+        if let animatedSpider = SKSpriteNode.createAnimatedSprite(
+            gifNamed: "Spider",
+            size: CGSize(width: gridSize * 2.0, height: gridSize * 2.0)
+        ) {
+            bugNode = animatedSpider
+        } else {
+            // Fallback: GIF yüklenemezse eski bug kullan
+            print("⚠️ Spider.gif yüklenemedi, fallback Bug.png kullanılıyor")
+            bugNode = SKSpriteNode(imageNamed: "Bug")
+            bugNode.size = CGSize(width: gridSize * 1.5, height: gridSize * 1.5)
+        }
+        
         bugNode.zPosition = 10
 
         bugGridPos = (cols / 2, 0)
         updateBugPosition()
         tileMap.addChild(bugNode)
         
+        // Ağ efekti setup
+        setupBugTrailEffect()
+        
         // --- Trail Line Setup ---
         activeTrailNode = SKShapeNode()
-        activeTrailNode.strokeColor = .cyan
-        activeTrailNode.lineWidth = gridSize * 0.4
+        activeTrailNode.strokeColor = .clear  // Görünmez yap
+        activeTrailNode.lineWidth = 0  // Çizgi kalınlığı 0
         activeTrailNode.lineCap = .round
         activeTrailNode.zPosition = 5
         activeTrailPath = CGMutablePath()
@@ -362,6 +377,9 @@ class GameScene: SKScene {
             }
             activeTrailPath.addLine(to: nextPos)
             activeTrailNode.path = activeTrailPath
+            
+            // Ağ efektini aktif et
+            updateBugTrailEmission(isActive: true)
         } else {
             // Not in trail mode (e.g. safe zone), clear path or keep it?
             // If we just entered safe zone, 'handleGridTransition' should have triggered fillArea
@@ -369,6 +387,9 @@ class GameScene: SKScene {
                 activeTrailPath = CGMutablePath()
                 activeTrailNode.path = nil
             }
+            
+            // Ağ efektini kapat
+            updateBugTrailEmission(isActive: false)
         }
     }
     
@@ -627,6 +648,9 @@ class GameScene: SKScene {
                 }
             }
             refreshTileMap()
+            
+            // Clear web trail
+            clearWebTrail()
 
             // Pause Game to avoid instant death loop
             currentState = .ready
@@ -654,6 +678,9 @@ class GameScene: SKScene {
         // Reset Trail
         activeTrailPath = CGMutablePath()
         activeTrailNode.path = nil
+        
+        // Clear web trail
+        clearWebTrail()
 
         // Reset rotation
         bugNode.zRotation = 0
