@@ -1,8 +1,11 @@
+import ImageIO
+import SwiftUI
+
 #if canImport(UIKit)
     import UIKit
-    import SwiftUI
-    import ImageIO
+#endif
 
+#if canImport(UIKit)
     struct GifImageView: UIViewRepresentable {
         let gifName: String
 
@@ -52,5 +55,11 @@
         func updateUIView(_ uiView: UIImageView, context: Context) {
             // No updates needed
         }
+    }
+#endif
+
+#if canImport(SwiftUI) && canImport(UIKit)
+    #Preview {
+        GifImageView(gifName: "LaunchScreen")
     }
 #endif
