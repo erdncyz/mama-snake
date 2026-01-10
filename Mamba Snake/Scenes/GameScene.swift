@@ -33,12 +33,13 @@ class GameScene: SKScene {
 
     // MARK: - Nodes
     var tileMap: SKTileMapNode!
-    var bugNode: SKShapeNode!
-    var snakeNode: SKShapeNode!
+    var bugNode: SKSpriteNode!
+    var snakeNode: SKSpriteNode!
     var uiLayer: SKNode!
 
     // UI Nodes
     var gameOverPanel: SKNode!
+    var pausePanel: SKNode!
     var hudNode: SKNode!
     var landingNode: SKNode!
 
@@ -52,14 +53,14 @@ class GameScene: SKScene {
     var bugGridPos: (x: Int, y: Int) = (0, 0)
     var snakePosition: CGPoint = .zero
     var snakeVelocity: CGVector = .zero
-    var snakeBody: [SKShapeNode] = []
+    var snakeBody: [SKSpriteNode] = []
 
     // Snake Movement History for Trail Effect
     var snakeHistory: [CGPoint] = []
     var snakeBodyCount: Int {
         return GameManager.shared.level
     }
-    let snakeSpacing: CGFloat = 15.0  // Distance between segments
+    let snakeSpacing: CGFloat = 6.0  // Distance between segments
 
     var lives: Int = 3
 
@@ -78,64 +79,14 @@ class GameScene: SKScene {
 
     override func didMove(to view: SKView) {
         self.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        #if os(macOS)
-            self.backgroundColor = NSColor(displayP3Red: 0.15, green: 0.55, blue: 0.25, alpha: 1.0)
-        #else
-            self.backgroundColor = UIColor(displayP3Red: 0.15, green: 0.55, blue: 0.25, alpha: 1.0)
-        #endif
+
 
         setupTextures()
         startLevel()
         setupGestures(view: view)
     }
 
-    // MARK: - Path Generation
 
-    func createBugPath() -> CGPath {
-        #if canImport(UIKit)
-            let path = UIBezierPath()
-            let size = gridSize
-            // Body (Oval)
-            path.append(
-                UIBezierPath(
-                    ovalIn: CGRect(x: -size * 0.4, y: -size * 0.5, width: size * 0.8, height: size))
-            )
-            // Head
-            path.append(
-                UIBezierPath(
-                    ovalIn: CGRect(
-                        x: -size * 0.25, y: size * 0.4, width: size * 0.5, height: size * 0.3)))
-            return path.cgPath
-        #else
-            let path = CGMutablePath()
-            let size = gridSize
-            path.addEllipse(
-                in: CGRect(x: -size * 0.4, y: -size * 0.5, width: size * 0.8, height: size))
-            path.addEllipse(
-                in: CGRect(x: -size * 0.25, y: size * 0.4, width: size * 0.5, height: size * 0.3))
-            return path
-        #endif
-    }
-
-    func createSnakePath() -> CGPath {
-        #if canImport(UIKit)
-            let path = UIBezierPath()
-            // Rounded "Kawaii" Head
-            // Oval centered
-            let headRect = CGRect(
-                x: -gridSize * 0.6, y: -gridSize * 0.5, width: gridSize * 1.2,
-                height: gridSize * 1.1)
-            path.append(UIBezierPath(ovalIn: headRect))
-            return path.cgPath
-        #else
-            let path = CGMutablePath()
-            let headRect = CGRect(
-                x: -gridSize * 0.6, y: -gridSize * 0.5, width: gridSize * 1.2,
-                height: gridSize * 1.1)
-            path.addEllipse(in: headRect)
-            return path
-        #endif
-    }
 
     // MARK: - Level Setup
 
@@ -146,6 +97,17 @@ class GameScene: SKScene {
 
     func startLevel() {
         removeAllChildren()
+
+        // Set Background Image
+        let bgNode = SKSpriteNode(imageNamed: "Background")
+        bgNode.position = .zero // Center since anchor is 0.5,0.5
+        bgNode.zPosition = -100
+        
+        // Scale to fit
+        let ratio = max(self.size.width / bgNode.size.width, self.size.height / bgNode.size.height)
+        bgNode.setScale(ratio)
+        
+        addChild(bgNode)
 
         // Fix UI Margin: Adjusted for clean full-screen look
         let topMargin: CGFloat = 70.0
@@ -213,16 +175,8 @@ class GameScene: SKScene {
         refreshTileMap()
 
         // --- Bug Setup ---
-        // Enhanced Vector Bug (Metallic Beetle)
-        bugNode = SKShapeNode(path: createBugPath())
-        #if os(macOS)
-            bugNode.fillColor = NSColor(displayP3Red: 0.0, green: 0.8, blue: 0.2, alpha: 1.0)
-            bugNode.strokeColor = NSColor(displayP3Red: 1.0, green: 0.8, blue: 0.0, alpha: 1.0)
-        #else
-            bugNode.fillColor = UIColor(displayP3Red: 0.0, green: 0.8, blue: 0.2, alpha: 1.0)
-            bugNode.strokeColor = UIColor(displayP3Red: 1.0, green: 0.8, blue: 0.0, alpha: 1.0)
-        #endif
-        bugNode.lineWidth = 2.0
+        bugNode = SKSpriteNode(imageNamed: "Bug")
+        bugNode.size = CGSize(width: gridSize, height: gridSize)
         bugNode.zPosition = 10
 
         bugGridPos = (cols / 2, 0)
@@ -296,89 +250,21 @@ class GameScene: SKScene {
         let centerY = CGFloat(spawnY) * gridSize + gridSize / 2
         snakePosition = CGPoint(x: centerX, y: centerY)
 
-        // Create Body Segments with Shapes and Patterns
+        // Create Body Segments
         for _ in 0..<snakeBodyCount {
-            let segRadius = gridSize * 0.55  // Slightly larger overlaps
-            let seg = SKShapeNode(circleOfRadius: segRadius)
-
-            // Natural Green Body
-            #if os(macOS)
-                let bodyColor = NSColor(displayP3Red: 0.2, green: 0.8, blue: 0.3, alpha: 1.0)
-                let patternColor = NSColor(displayP3Red: 0.8, green: 0.9, blue: 0.2, alpha: 1.0)
-                seg.fillColor = bodyColor
-                seg.strokeColor = NSColor(white: 0.0, alpha: 0.1)  // Subtle outline
-            #else
-                let bodyColor = UIColor(displayP3Red: 0.2, green: 0.8, blue: 0.3, alpha: 1.0)
-                let patternColor = UIColor(displayP3Red: 0.8, green: 0.9, blue: 0.2, alpha: 1.0)
-                seg.fillColor = bodyColor
-                seg.strokeColor = UIColor(white: 0.0, alpha: 0.1)
-            #endif
-            seg.lineWidth = 1
+            let seg = SKSpriteNode(imageNamed: "SnakeBody")
+            seg.size = CGSize(width: gridSize, height: gridSize)
             seg.zPosition = 8
             seg.position = snakePosition
-
-            // Add Pattern (Yellow Stripe/Triangle)
-            // Simple triangle pointing up (which becomes "back" when rotated?)
-            // Actually snake rotates, so pattern should be directional.
-            // Let's make a "Lightning Bolt" or "V" shape
-            let patPath = CGMutablePath()
-            patPath.move(to: CGPoint(x: -segRadius * 0.6, y: -segRadius * 0.2))
-            patPath.addLine(to: CGPoint(x: 0, y: segRadius * 0.5))
-            patPath.addLine(to: CGPoint(x: segRadius * 0.6, y: -segRadius * 0.2))
-            patPath.addLine(to: CGPoint(x: 0, y: 0))  // V shape
-            patPath.closeSubpath()
-
-            let patternNode = SKShapeNode(path: patPath)
-            patternNode.fillColor = patternColor  // Yellow
-            patternNode.lineWidth = 0
-            patternNode.position = CGPoint(x: 0, y: 0)
-            seg.addChild(patternNode)
-
             tileMap.addChild(seg)
             snakeBody.append(seg)
         }
 
         // Create Head
-        snakeNode = SKShapeNode(path: createSnakePath())
-        #if os(macOS)
-            snakeNode.fillColor = NSColor(displayP3Red: 0.2, green: 0.85, blue: 0.35, alpha: 1.0)  // Lighter green head
-            snakeNode.strokeColor = NSColor(white: 0.0, alpha: 0.1)
-        #else
-            snakeNode.fillColor = UIColor(displayP3Red: 0.2, green: 0.85, blue: 0.35, alpha: 1.0)
-            snakeNode.strokeColor = UIColor(white: 0.0, alpha: 0.1)
-        #endif
-        snakeNode.lineWidth = 1.0
+        snakeNode = SKSpriteNode(imageNamed: "SnakeHead")
+        snakeNode.size = CGSize(width: gridSize * 1.2, height: gridSize * 1.2)
         snakeNode.zPosition = 9
         snakeNode.position = snakePosition
-
-        // Cartoon Eyes
-        func createEye(x: CGFloat) -> SKShapeNode {
-            let eye = SKShapeNode(circleOfRadius: gridSize * 0.22)
-            eye.fillColor = .white
-            eye.lineWidth = 0
-            eye.position = CGPoint(x: x, y: gridSize * 0.2)
-
-            let pupil = SKShapeNode(circleOfRadius: gridSize * 0.12)
-            pupil.fillColor = .black
-            pupil.lineWidth = 0
-            // Look slightly forward
-            pupil.position = CGPoint(x: 0, y: gridSize * 0.05)
-            eye.addChild(pupil)
-
-            let gleam = SKShapeNode(circleOfRadius: gridSize * 0.04)
-            gleam.fillColor = .white
-            gleam.lineWidth = 0
-            gleam.position = CGPoint(x: gridSize * 0.04, y: gridSize * 0.06)
-            pupil.addChild(gleam)
-
-            return eye
-        }
-
-        let eyeLeft = createEye(x: -gridSize * 0.25)
-        let eyeRight = createEye(x: gridSize * 0.25)
-
-        snakeNode.addChild(eyeLeft)
-        snakeNode.addChild(eyeRight)
 
         snakeVelocity = CGVector(dx: snakeSpeed, dy: snakeSpeed)
         tileMap.addChild(snakeNode)
@@ -717,6 +603,35 @@ class GameScene: SKScene {
 
         // Randomize direction handled in handleTap if needed
         // snakeVelocity = ... (Removed to prevent override)
+    }
+
+    func togglePause() {
+        if currentState == .playing {
+            currentState = .paused
+            showPausePanel()
+        } else if currentState == .paused {
+            currentState = .playing
+            hidePausePanel()
+        }
+    }
+
+    func showPausePanel() {
+        if pausePanel == nil { setupPausePanel() }
+        pausePanel.isHidden = false
+        pausePanel.alpha = 0
+        pausePanel.run(SKAction.fadeIn(withDuration: 0.2))
+        
+        // Scale effect
+        pausePanel.setScale(0.8)
+        pausePanel.run(SKAction.scale(to: 1.0, duration: 0.2))
+    }
+
+    func hidePausePanel() {
+        if pausePanel != nil {
+            pausePanel.run(SKAction.fadeOut(withDuration: 0.2)) {
+                self.pausePanel.isHidden = true
+            }
+        }
     }
 
     func gameOver(win: Bool) {

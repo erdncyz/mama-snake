@@ -33,6 +33,16 @@ extension GameScene {
         let nodes = self.nodes(at: sceneLoc)
 
         for node in nodes {
+            // Check for buttons (Handle label inside button case)
+            if node.name == "pauseBtn" || node.parent?.name == "pauseBtn" {
+                togglePause()
+                return
+            }
+            if node.name == "resumeBtn" || node.parent?.name == "resumeBtn" {
+                togglePause()
+                return
+            }
+
             if node.name == "credits" {
                 if let url = URL(string: "https://erdincyilmaz.netlify.app/") {
                     #if canImport(UIKit)

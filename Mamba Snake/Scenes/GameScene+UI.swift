@@ -20,22 +20,16 @@ extension GameScene {
     func setupTextures() {
         let size = CGSize(width: gridSize, height: gridSize)
 
-        // 1. Empty (Danger): Dark Dirt/Dry Ground
+        // 1. Empty (Danger): Transparent to show Background
         emptyTexture = createTexture(size: size) { ctx in
-            // Background
+            // No Fill (Clear) so background image shows through
+            // Just a subtle grid line
             #if os(macOS)
-                NSColor(calibratedRed: 0.25, green: 0.22, blue: 0.18, alpha: 1.0).setFill()
+                NSColor(white: 1.0, alpha: 0.1).setStroke()
             #else
-                UIColor(red: 0.25, green: 0.22, blue: 0.18, alpha: 1.0).setFill()
+                UIColor(white: 1.0, alpha: 0.1).setStroke()
             #endif
-            ctx.fill(CGRect(origin: .zero, size: size))
-            // Subtle texture/pebble marks?
-            // Simple low-alpha noise or grid
-            #if os(macOS)
-                NSColor(white: 1.0, alpha: 0.05).setStroke()
-            #else
-                UIColor(white: 1.0, alpha: 0.05).setStroke()
-            #endif
+            ctx.setLineWidth(1)
             ctx.stroke(CGRect(origin: .zero, size: size))
         }
 
@@ -58,33 +52,35 @@ extension GameScene {
             ctx.stroke(CGRect(origin: .zero, size: size))
         }
 
-        // 3. Trail (Drawing): Bright Electric Cyan (High Contrast on Dirt)
+        // 3. Trail (Drawing): Hot Pink / Plasma (Stylish & High Contrast)
         trailTexture = createTexture(size: size) { ctx in
             #if os(macOS)
-                NSColor(displayP3Red: 0.0, green: 0.9, blue: 1.0, alpha: 1.0).setFill()
+                NSColor(displayP3Red: 1.0, green: 0.2, blue: 0.6, alpha: 0.9).setFill()
             #else
-                UIColor(displayP3Red: 0.0, green: 0.9, blue: 1.0, alpha: 1.0).setFill()
+                UIColor(displayP3Red: 1.0, green: 0.2, blue: 0.6, alpha: 0.9).setFill()
             #endif
-            ctx.fill(CGRect(origin: .zero, size: size))
+            // Slight inset for "floating" tile look
+            let rect = CGRect(origin: .zero, size: size).insetBy(dx: 1, dy: 1)
+            ctx.fill(rect)
 
-            // Inner glowing core
+            // White Border/Glow
             #if os(macOS)
-                NSColor.white.setFill()
+                NSColor(white: 1.0, alpha: 0.5).setStroke()
             #else
-                UIColor.white.setFill()
+                UIColor(white: 1.0, alpha: 0.5).setStroke()
             #endif
-            ctx.fill(
-                CGRect(
-                    x: size.width * 0.25, y: size.height * 0.25, width: size.width * 0.5,
-                    height: size.height * 0.5))
+            ctx.setLineWidth(2)
+            ctx.stroke(rect)
         }
 
-        // 4. Border: Visible (Matches Green Grass to look Full Screen)
+        // 4. Border: Transparent / Invisible Wall
         borderTexture = createTexture(size: size) { ctx in
+            // No fill so background shows through
+            // Optional: Subtle danger indication or just clean
             #if os(macOS)
-                NSColor(displayP3Red: 0.15, green: 0.55, blue: 0.25, alpha: 1.0).setFill()
+                NSColor.clear.setFill()
             #else
-                UIColor(displayP3Red: 0.15, green: 0.55, blue: 0.25, alpha: 1.0).setFill()
+                UIColor.clear.setFill()
             #endif
             ctx.fill(CGRect(origin: .zero, size: size))
         }
@@ -155,8 +151,15 @@ extension GameScene {
         livesPill.name = "livesPill"
         hudNode.addChild(livesPill)
 
+        // --- Pause Button ---
+        let pauseBtn = createHUDItem(icon: "⏸", text: "", color: .white, width: 50)
+        pauseBtn.position = CGPoint(x: width * 0.45, y: 0) // Far right
+        pauseBtn.name = "pauseBtn"
+        hudNode.addChild(pauseBtn)
+
         // Setup Game Over Panel
         setupGameOverPanel()
+        setupPausePanel()
 
         // Start Message
         messageLabel = SKLabelNode(fontNamed: "AvenirNext-Heavy")
@@ -444,6 +447,54 @@ extension GameScene {
             SKAction.scale(to: 0.95, duration: 0.8),
         ])
         btn.run(SKAction.repeatForever(pulse))
+    }
+
+    func setupPausePanel() {
+        if pausePanel != nil { pausePanel.removeFromParent() }
+        pausePanel = SKNode()
+        pausePanel.zPosition = 2000
+        pausePanel.alpha = 0
+        pausePanel.isHidden = true
+        addChild(pausePanel)
+
+        // Overlay
+        let bgOverlay = SKShapeNode(rectOf: self.size)
+        #if os(macOS)
+            bgOverlay.fillColor = NSColor.black.withAlphaComponent(0.7)
+        #else
+            bgOverlay.fillColor = UIColor.black.withAlphaComponent(0.7)
+        #endif
+        bgOverlay.lineWidth = 0
+        pausePanel.addChild(bgOverlay)
+
+        // Title
+        let title = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+        title.text = "PAUSED"
+        title.fontSize = 48
+        title.fontColor = .white
+        title.position = CGPoint(x: 0, y: 50)
+        pausePanel.addChild(title)
+
+        // Resume Button
+        let resumeBtn = SKShapeNode(rectOf: CGSize(width: 200, height: 60), cornerRadius: 30)
+        #if os(macOS)
+            resumeBtn.fillColor = NSColor(displayP3Red: 0.2, green: 0.8, blue: 0.3, alpha: 1.0)
+            resumeBtn.strokeColor = .white
+        #else
+            resumeBtn.fillColor = UIColor(displayP3Red: 0.2, green: 0.8, blue: 0.3, alpha: 1.0)
+            resumeBtn.strokeColor = .white
+        #endif
+        resumeBtn.lineWidth = 2
+        resumeBtn.position = CGPoint(x: 0, y: -50)
+        resumeBtn.name = "resumeBtn"
+        pausePanel.addChild(resumeBtn)
+
+        let btnLbl = SKLabelNode(fontNamed: "AvenirNext-Bold")
+        btnLbl.text = "RESUME"
+        btnLbl.fontSize = 24
+        btnLbl.fontColor = .white
+        btnLbl.verticalAlignmentMode = .center
+        resumeBtn.addChild(btnLbl)
     }
 
     func updateLabels() {

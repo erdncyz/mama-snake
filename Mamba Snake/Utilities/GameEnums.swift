@@ -23,5 +23,5 @@ enum Direction {
 }
 
 enum GameState {
-    case ready, playing, gameOver, levelComplete
+    case ready, playing, paused, gameOver, levelComplete
 }
