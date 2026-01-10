@@ -30,6 +30,7 @@ class GameScene: SKScene {
     var nextDirection: Direction = .none
     var lastUpdateTime: TimeInterval = 0
     var currentState: GameState = .ready
+    var isEating: Bool = false
 
     // MARK: - Nodes
     var tileMap: SKTileMapNode!
@@ -41,6 +42,7 @@ class GameScene: SKScene {
 
     // Entities
     var bugGridPos: (x: Int, y: Int) = (0, 0)
+    var trailStartGridPos: (x: Int, y: Int) = (0, 0)  // Track where the trail started
     var snakePosition: CGPoint = .zero
     var snakeVelocity: CGVector = .zero
     var snakeBody: [SKSpriteNode] = []
@@ -53,6 +55,9 @@ class GameScene: SKScene {
     let snakeSpacing: CGFloat = 6.0  // Distance between segments
 
     var lives: Int = 3
+
+    var timeSinceLastSnakeTurn: TimeInterval = 0
+    var nextSnakeTurnTime: TimeInterval = 2.0
 
     // Textures
     var emptyTexture: SKTexture!
@@ -142,6 +147,7 @@ class GameScene: SKScene {
     // MARK: - Level Setup
 
     func resetGame() {
+        isEating = false
         GameManager.shared.reset()
         lives = 3
     }
@@ -197,7 +203,11 @@ class GameScene: SKScene {
         let visibleCols = Int(targetVisibleCols)
         // HUD için üstten boşluk bırak (Daha az boşluk: 110pt)
         let hudMargin: CGFloat = 84.0
-        let visibleRows = Int(ceil((availableHeight - hudMargin) / gridSize))
+        // iPhone Home Indicator için alttan boşluk bırak
+        let safeAreaBottom: CGFloat = 20.0
+
+        // availableHeight'ten hem üst hem alt boşluğu çıkar
+        let visibleRows = Int(ceil((availableHeight - hudMargin - safeAreaBottom) / gridSize))
 
         // Ekrana tam sığmalı, dışarı taşmamalı
         cols = visibleCols
@@ -239,9 +249,9 @@ class GameScene: SKScene {
 
         tileMap.anchorPoint = .zero
 
-        // Sahne anchor (0,0) olduğu için ve grid tam ekran boyutu olduğu için
-        // TileMap'i direkt (0,0) noktasına koyuyoruz.
-        tileMap.position = .zero
+        // TileMap'i safeAreaBottom kadar yukarı kaydır
+        // Böylece en alt satır home indicator'ın üzerinde kalır
+        tileMap.position = CGPoint(x: 0, y: safeAreaBottom)
         addChild(tileMap)
         refreshTileMap()
 
@@ -333,8 +343,9 @@ class GameScene: SKScene {
         var spawnX = cols / 4  // Sol taraf
         var spawnY = (rows * 3) / 4  // Üst taraf
 
-        // If center is blocked (Filled/Border/Trail), search spiral
-        if grid[spawnX][spawnY] != .empty {
+        // If center is blocked (Filled/Border/Trail) OR Too Close to Bug, search spiral
+        let initialDist = abs(spawnX - bugGridPos.x) + abs(spawnY - bugGridPos.y)
+        if grid[spawnX][spawnY] != .empty || initialDist < 8 {
             var found = false
             let maxRad = max(cols, rows)
             searchLoop: for r in 1...maxRad {
@@ -346,7 +357,9 @@ class GameScene: SKScene {
                         let nx = spawnX + dx
                         let ny = spawnY + dy
                         if nx >= 1 && nx < cols - 1 && ny >= 1 && ny < rows - 1 {
-                            if grid[nx][ny] == .empty {
+                            // Check empty AND distance from bug
+                            let distToBug = abs(nx - bugGridPos.x) + abs(ny - bugGridPos.y)
+                            if grid[nx][ny] == .empty && distToBug > 5 {
                                 spawnX = nx
                                 spawnY = ny
                                 found = true
@@ -356,6 +369,12 @@ class GameScene: SKScene {
                     }
                 }
             }
+        }
+
+        // Final Safety Check: If spawn is ON TOP of bug, move it
+        if spawnX == bugGridPos.x && spawnY == bugGridPos.y {
+            spawnX = (spawnX + 10) % (cols - 1)
+            spawnY = (spawnY + 10) % (rows - 1)
         }
 
         let centerX = CGFloat(spawnX) * gridSize + gridSize / 2
@@ -378,7 +397,10 @@ class GameScene: SKScene {
         snakeNode.zPosition = 9
         snakeNode.position = snakePosition
 
-        snakeVelocity = CGVector(dx: snakeSpeed, dy: snakeSpeed)
+        // Random Initial Direction
+        let randomStartAngle = CGFloat.random(in: 0...(2 * .pi))
+        snakeVelocity = CGVector(
+            dx: cos(randomStartAngle) * snakeSpeed, dy: sin(randomStartAngle) * snakeSpeed)
         tileMap.addChild(snakeNode)
 
         // Init history for segments to sit on
@@ -394,6 +416,8 @@ class GameScene: SKScene {
         if GameManager.shared.isPlaying && currentState == .ready {
             currentState = .playing
         }
+
+        if isEating { return }
 
         guard currentState == .playing else {
             lastUpdateTime = currentTime
@@ -551,6 +575,15 @@ class GameScene: SKScene {
 
         // Moving into Empty (Start/Continue Trail)
         if targetCell == .empty {
+            // Check if we are starting a new trail from a safe zone
+            let currentCell = grid[bugGridPos.x][bugGridPos.y]
+            if currentCell == .filled || currentCell == .border {
+                trailStartGridPos = bugGridPos
+            } else if trailStartGridPos == (0, 0) {
+                // Fallback if somehow undefined
+                trailStartGridPos = bugGridPos
+            }
+
             // Mark new cell
             grid[newX][newY] = .trail
             // We DO NOT update visual tile here to avoid "blocks" appearing.
@@ -568,6 +601,22 @@ class GameScene: SKScene {
     }
 
     func moveSnake(dt: CGFloat) {
+        // Random Turn Logic
+        timeSinceLastSnakeTurn += TimeInterval(dt)
+        if timeSinceLastSnakeTurn >= nextSnakeTurnTime {
+            timeSinceLastSnakeTurn = 0
+            // Random interval between 0.5 and 2.5 seconds
+            nextSnakeTurnTime = Double.random(in: 0.5...2.5)
+
+            // Randomly rotate velocity vector
+            // Turn between -60 and +60 degrees to maintain forward moment but erratic path
+            let currentAngle = atan2(snakeVelocity.dy, snakeVelocity.dx)
+            let change = CGFloat.random(in: -CGFloat.pi / 3...CGFloat.pi / 3)
+            let newAngle = currentAngle + change
+
+            snakeVelocity = CGVector(dx: cos(newAngle) * snakeSpeed, dy: sin(newAngle) * snakeSpeed)
+        }
+
         let dx = snakeVelocity.dx * dt
         let dy = snakeVelocity.dy * dt
         let nextPos = CGPoint(x: snakePosition.x + dx, y: snakePosition.y + dy)
@@ -655,27 +704,32 @@ class GameScene: SKScene {
         }
         snakeNode.position = snakePosition
 
+        snakeNode.position = snakePosition
+
+        // --- Improved Collision Detection ---
+        // Calculate distance between centers
+        let dist = hypot(
+            snakeNode.position.x - bugNode.position.x, snakeNode.position.y - bugNode.position.y)
+
         // Check collision HEAD
-        if snakeNode.intersects(bugNode) {
-            // Sadece çizgi çizerken (Trail üzerindeyken) ölebilir.
-            // Güvenli bölgede (Border veya Filled) ise yılan içinden geçip gider.
-            let cell = grid[bugGridPos.x][bugGridPos.y]
-            if cell == .trail {
-                die()
-                return
-            }
+        // PIXEL PERFECT Kontrol (Kullanıcı: "Hiç mesafe olmasın")
+        // Grid Size 25. Head ~75. Bug ~100.
+        // 15.0 değeri, merkezlerin neredeyse üst üste gelmesini gerektirir.
+        if dist < 15.0 {
+            triggerDeathSequence()
+            return
         }
 
-        // Check collision BODY
+        // Check collision BODY (Tail checks)
+        // Kuyruk için de tam merkez kontrolü
         for segment in snakeBody {
-            if segment.intersects(bugNode) {
-                // Gövde çarpışmasında da aynı kural geçerli:
-                // Sadece çizgi çizerken (Trail üzerindeyken) ölebilir.
-                let cell = grid[bugGridPos.x][bugGridPos.y]
-                if cell == .trail {
-                    die()
-                    return
-                }
+            let bodyDist = hypot(
+                segment.position.x - bugNode.position.x, segment.position.y - bugNode.position.y)
+
+            // 10.0 değeri - tam isabet.
+            if bodyDist < 10.0 {
+                triggerDeathSequence()
+                return
             }
         }
     }
@@ -771,8 +825,44 @@ class GameScene: SKScene {
         playSound(.score)  // Score/Confirm
     }
 
+    func triggerDeathSequence() {
+        if isEating { return }
+        isEating = true
+
+        // Play crash/eat sound immediately
+        playSound(.crash)
+
+        // Animation Sequence
+        // 1. Move Head to Bug (Snap)
+        let moveAction = SKAction.move(to: bugNode.position, duration: 0.2)
+        moveAction.timingMode = .easeOut
+
+        // 2. Crunch Animation (Scale Up/Down)
+        let scaleUp = SKAction.scale(to: 1.5, duration: 0.15)
+        let scaleDown = SKAction.scale(to: 0.8, duration: 0.15)
+        let crunch = SKAction.sequence([scaleUp, scaleDown, scaleUp, scaleDown])
+
+        // 3. Bug Reacts (Shake/Shrink - pretending to be eaten/fighting)
+        let shakeLeft = SKAction.moveBy(x: -8, y: 0, duration: 0.05)
+        let shakeRight = SKAction.moveBy(x: 8, y: 0, duration: 0.05)
+        let shakeSeq = SKAction.repeat(SKAction.sequence([shakeLeft, shakeRight]), count: 10)
+        let shrink = SKAction.scale(to: 0.01, duration: 1.0)
+        let bugAction = SKAction.sequence([shakeSeq, shrink])
+
+        snakeNode.run(SKAction.sequence([moveAction, crunch]))
+        bugNode.run(bugAction)
+
+        // 4. Wait 2-3 seconds then Die
+        let wait = SKAction.wait(forDuration: 2.5)
+        self.run(wait) { [weak self] in
+            // Bug scale reset is handled in resetPositions
+            self?.isEating = false
+            self?.die()
+        }
+    }
+
     func die() {
-        playSound(.crash)  // Crash sound
+        // playSound(.crash) // Moved to triggerDeathSequence for immediate feedback
         lives -= 1
 
         DispatchQueue.main.async {
@@ -816,8 +906,18 @@ class GameScene: SKScene {
     }
 
     func resetPositions() {
-        // Bug position reset - ekranın en altına, ortaya yerleştir
-        bugGridPos = (cols / 2, 0)  // En altta, ortada (border üzerinde)
+        // Bug position reset - ÖLDÜĞÜ YERİN BAŞLANGICINDAN BAŞLA (Kullanıcı İsteği)
+        // Eğer trailStartGridPos geçerliyse oraya dön (En son güvenli nokta)
+        if trailStartGridPos.x != 0 || trailStartGridPos.y != 0 {
+            bugGridPos = trailStartGridPos
+        }
+
+        // Eğer bugGridPos hiç set edilmemişse (nadiren), merkeze al.
+        if bugGridPos.x == 0 && bugGridPos.y == 0 {
+            bugGridPos = (cols / 2, 0)
+        }
+
+        // Snap to grid (Görseli logic'e oturt)
         let x = CGFloat(bugGridPos.x) * gridSize + gridSize / 2
         let y = CGFloat(bugGridPos.y) * gridSize + gridSize / 2
         bugNode.position = CGPoint(x: x, y: y)
@@ -834,6 +934,7 @@ class GameScene: SKScene {
 
         // Reset rotation
         bugNode.zRotation = 0
+        bugNode.setScale(1.0)
 
         // Re-setup snake fully to reset body history and positions
         setupSnake()
