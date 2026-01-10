@@ -98,32 +98,25 @@ class GameScene: SKScene {
         let ratio = max(self.size.width / bgNode.size.width, self.size.height / bgNode.size.height)
         bgNode.setScale(ratio)
         
-        addChild(bgNode)
+        // Use full screen dimensions
+        let availableWidth = self.size.width
+        let availableHeight = self.size.height
 
-        // Fix UI Margin: Adjusted for clean full-screen look
-        let topMargin: CGFloat = 70.0
-        let bottomMargin: CGFloat = 40.0  // Increased for Footer
-        let availableHeight = self.size.height - (topMargin + bottomMargin)
-
-        // Dynamic Grid Size for Full Width No-Gap
-        // We target roughly 25.0 but adjust to fit perfectly
-        let targetCols: CGFloat = 15.0
-        let rawGridSize = self.size.width / targetCols
-        gridSize = rawGridSize  // Precise float
-
-        cols = Int(targetCols)
-        rows = Int(availableHeight / gridSize)
-
-        // Ensure odd number for centering if preferred, or just even.
-        // Actually, just use what fits.
-        // snake wants a center point.
-        // If cols is odd, center is integer index.
-        if cols % 2 == 0 { cols -= 1 }
-        if rows % 2 == 0 { rows -= 1 }
+        // Dynamic Grid Size Calculation
+        // We want exactly 'targetVisibleCols' inside the screen.
+        let targetVisibleCols: CGFloat = 15.0
+        gridSize = availableWidth / targetVisibleCols
+        
+        let visibleCols = Int(targetVisibleCols)
+        let visibleRows = Int(ceil(availableHeight / gridSize))
+        
+        // Add 2 extra to cols and rows for OFF-SCREEN borders
+        cols = visibleCols + 2
+        rows = visibleRows + 2
 
         grid = Array(repeating: Array(repeating: .empty, count: rows), count: cols)
 
-        // Borders
+        // Set Borders (Now these will be off-screen)
         for x in 0..<cols {
             grid[x][0] = .border
             grid[x][rows - 1] = .border
@@ -152,16 +145,34 @@ class GameScene: SKScene {
             tileSet: tileSet, columns: cols, rows: rows,
             tileSize: CGSize(width: gridSize, height: gridSize))
 
-        let mapWidth = CGFloat(cols) * gridSize
-        let mapHeight = CGFloat(rows) * gridSize
+        let totalMapWidth = CGFloat(cols) * gridSize
+        let totalMapHeight = CGFloat(rows) * gridSize
+        
         tileMap.anchorPoint = .zero
 
-        // Center vertically in the available area
-        let totalPlayAreaY = (self.size.height - mapHeight) / 2.0
-        // But we want to respect margins.
+        // Center the map such that the borders are pushed out.
+        // The visible area starts at grid[1][1] (which is x=gridSize, y=gridSize in map coords)
+        // We want grid[1][1] to be at (-availableWidth/2, -availableHeight/2) relative to scene center?
+        // No, scene anchor is 0.5, 0.5. So center is (0,0).
+        // Left edge of screen is -width/2.
+        // Left edge of PLAYABLE area (col 1) should be at -width/2.
+        // Map origin (col 0) is at 0.
+        // tileMap.position.x + (1 * gridSize) = -width/2
+        // => tileMap.position.x = -width/2 - gridSize
+        
+        // Wait, let's verify map origin. SKTileMapNode centers tiles usually but we set anchor .zero? 
+        // SKTileMapNode local origin (0,0) depends on anchor. with anchor (0,0), it's bottom-left of the whole map.
+        // So col 0 starts at x=0. col 1 starts at x=gridSize.
+        
+        let xOffset = -(availableWidth / 2) - gridSize
+        let yOffset = -(availableHeight / 2) - gridSize
+        
+        // Fine tune to center vertically exactly if rows calculation had remainder
+        let verticalSlack = (CGFloat(visibleRows) * gridSize) - availableHeight
+        // We want to center the slack
+        let yCenteredOffset = yOffset - (verticalSlack / 2)
 
-        let centerYShift = (bottomMargin - topMargin) / 2.0
-        tileMap.position = CGPoint(x: -mapWidth / 2, y: -mapHeight / 2 + centerYShift)
+        tileMap.position = CGPoint(x: xOffset, y: yCenteredOffset)
         addChild(tileMap)
         refreshTileMap()
 
@@ -575,12 +586,39 @@ class GameScene: SKScene {
         var visited = Array(repeating: Array(repeating: false, count: rows), count: cols)
         var queue: [(Int, Int)] = []
 
-        let sx = max(0, min(cols - 1, snakeGridX))
-        let sy = max(0, min(rows - 1, snakeGridY))
-
-        if grid[sx][sy] == .empty {
-            queue.append((sx, sy))
-            visited[sx][sy] = true
+        // Robust Start: Search for an empty cell around the snake
+        // The snake might be slightly overlapping a border/trail visually, 
+        // but it must be centered in or near an empty valid play area.
+        let searchRadius = 2
+        var foundStart = false
+        
+        let centerX = max(0, min(cols - 1, snakeGridX))
+        let centerY = max(0, min(rows - 1, snakeGridY))
+        
+        // Spiral search or simple nested loop for start point
+        searchLoop: for r in 0...searchRadius {
+            for dx in -r...r {
+                for dy in -r...r {
+                    let nx = centerX + dx
+                    let ny = centerY + dy
+                    
+                    if nx >= 0 && nx < cols && ny >= 0 && ny < rows {
+                        if grid[nx][ny] == .empty {
+                            queue.append((nx, ny))
+                            visited[nx][ny] = true
+                            foundStart = true
+                            break searchLoop
+                        }
+                    }
+                }
+            }
+        }
+        
+        if !foundStart {
+             // Fallback: If snake is somehow completely entombed (should be impossible if alive),
+             // do not fill anything to avoid destroying the game state.
+             print("Critical: Snake Logic Error - No empty space found around snake.")
+             return
         }
 
         while !queue.isEmpty {
@@ -598,8 +636,11 @@ class GameScene: SKScene {
         }
 
         var filledCount = 0
-        let totalCells = cols * rows
-
+        let totalCells = (cols - 4) * (rows - 4) // Approx playable area count for percent logic
+        // (Adjusted totalCells logic to be more accurate if needed, but keeping simple for now)
+        // Actually total cells should be count of non-border cells? 
+        // Let's stick to simple count for now or fix visible area count.
+        
         for x in 0..<cols {
             for y in 0..<rows {
                 if grid[x][y] == .trail {
@@ -607,7 +648,15 @@ class GameScene: SKScene {
                 } else if grid[x][y] == .empty && !visited[x][y] {
                     grid[x][y] = .filled
                 }
-                if grid[x][y] == .filled { filledCount += 1 }
+                
+                // Only count visible filled cells for score
+                // i.e. not the outer borders we added
+                if grid[x][y] == .filled { 
+                    // exclude outer padding from stats
+                    if x > 0 && x < cols - 1 && y > 0 && y < rows - 1 {
+                        filledCount += 1
+                    }
+                }
             }
         }
 

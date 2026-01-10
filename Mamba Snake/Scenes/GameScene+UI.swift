@@ -14,14 +14,34 @@ extension GameScene {
         // Using CoreGraphics to make a clear texture.
         emptyTexture = createTexture(size: size) { _ in }
         
-        // 2. Filled
+        // 2. Filled (Webbed Pattern)
         filledTexture = createTexture(size: size) { ctx in
+            // Base Color (Glassy Green)
             #if os(macOS)
-                NSColor(displayP3Red: 0.15, green: 0.55, blue: 0.25, alpha: 1.0).setFill()
+                NSColor(displayP3Red: 0.1, green: 0.8, blue: 0.3, alpha: 0.3).setFill()
+                let strokeColor = NSColor(white: 1.0, alpha: 0.15)
             #else
-                UIColor(displayP3Red: 0.15, green: 0.55, blue: 0.25, alpha: 1.0).setFill()
+                UIColor(displayP3Red: 0.1, green: 0.8, blue: 0.3, alpha: 0.3).setFill()
+                let strokeColor = UIColor(white: 1.0, alpha: 0.15)
             #endif
+            
+            // Fill Background
             ctx.fill(CGRect(origin: .zero, size: size))
+            
+            // Add Web Texture (Subtle Crosshatch)
+            // This makes it look like a woven web instead of specific blocks
+            ctx.setStrokeColor(strokeColor.cgColor)
+            ctx.setLineWidth(1.0)
+            
+            // Diagonal 1
+            ctx.move(to: CGPoint(x: 0, y: 0))
+            ctx.addLine(to: CGPoint(x: size.width, y: size.height))
+            
+            // Diagonal 2 (Offset to create continuous pattern)
+            ctx.move(to: CGPoint(x: size.width * 0.5, y: 0))
+            ctx.addLine(to: CGPoint(x: size.width * 1.5, y: size.height))
+            
+            ctx.strokePath()
         }
 
         // 3. Trail
