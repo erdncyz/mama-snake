@@ -84,6 +84,12 @@ class GameManager: ObservableObject {
         submitScore()
     }
 
+    func revive() {
+        lives += 1
+        isGameOver = false
+        isPlaying = true
+    }
+
     func levelComplete() {
         isPlaying = false
         isLevelComplete = true

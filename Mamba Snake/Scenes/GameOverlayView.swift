@@ -360,6 +360,26 @@ struct GameOverlayView: View {
                         .padding(.top, 20)
                 }
 
+                if !gameManager.isLevelComplete {
+                    Button(action: {
+                        AdMobService.shared.showRewardedAd {
+                            gameManager.revive()
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "play.tv.fill")
+                            Text("WATCH & GET +1 ❤️")
+                        }
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .frame(width: 220, height: 50)
+                        .background(Color.green)
+                        .cornerRadius(25)
+                        .padding(.top, 10)
+                    }
+                }
+
                 Button(action: { showLeaderboard = true }) {
                     Text("VIEW LEADERBOARD")
                         .font(.headline)

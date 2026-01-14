@@ -16,9 +16,11 @@ class AdMobService: NSObject {
     #if DEBUG
         let bannerUnitID = "ca-app-pub-3940256099942544/2934735716"  // Test Banner
         let interstitialUnitID = "ca-app-pub-3940256099942544/4411468910"  // Test Interstitial
+        let rewardedUnitID = "ca-app-pub-3940256099942544/1712485313"  // Test Rewarded
     #else
-        let bannerUnitID = "ca-app-pub-1271900948473545/YOUR_BANNER_ID_HERE"  // Real Banner (User needs to fill)
-        let interstitialUnitID = "ca-app-pub-1271900948473545/YOUR_INTERSTITIAL_ID_HERE"  // Real Interstitial (User needs to fill)
+        let bannerUnitID = "ca-app-pub-1271900948473545/2385460844"  // Real Banner
+        let interstitialUnitID = "ca-app-pub-1271900948473545/4502350110"  // Real Interstitial
+        let rewardedUnitID = "ca-app-pub-1271900948473545/2726234018"  // Real Rewarded
     #endif
 
     #if canImport(GoogleMobileAds)
@@ -67,6 +69,51 @@ class AdMobService: NSObject {
                 print("Ad wasn't ready")
                 loadInterstitial()
             }
+        #endif
+    }
+
+    // MARK: - Rewarded Ads
+    #if canImport(GoogleMobileAds)
+        private var rewardedAd: RewardedAd?
+    #endif
+
+    func loadRewardedAd() {
+        #if canImport(GoogleMobileAds)
+            let request = Request()
+            RewardedAd.load(with: rewardedUnitID, request: request) { [weak self] ad, error in
+                if let error = error {
+                    print("Failed to load rewarded ad with error: \(error.localizedDescription)")
+                    return
+                }
+                self?.rewardedAd = ad
+                print("Rewarded ad loaded.")
+            }
+        #endif
+    }
+
+    func showRewardedAd(userDidEarnReward: @escaping () -> Void) {
+        #if canImport(GoogleMobileAds)
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                let rootVC = windowScene.windows.first?.rootViewController,
+                let ad = rewardedAd
+            else {
+                print("Rewarded ad not ready")
+                loadRewardedAd()
+                return
+            }
+
+            ad.present(from: rootVC) {
+                let reward = ad.adReward
+                print("Reward received with currency: \(reward.type), amount: \(reward.amount)")
+                // User earned reward
+                userDidEarnReward()
+            }
+            // Preload next
+            loadRewardedAd()
+        #else
+            // If in simulator/no SDK, just reward immediately for testing flow
+            print("Simulating reward in simulator")
+            userDidEarnReward()
         #endif
     }
 }
