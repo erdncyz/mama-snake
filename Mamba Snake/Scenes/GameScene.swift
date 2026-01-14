@@ -399,8 +399,14 @@ class GameScene: SKScene {
 
         // Random Initial Direction
         let randomStartAngle = CGFloat.random(in: 0...(2 * .pi))
+
+        // Increase speed by 10% each level
+        let levelMultiplier = 1.0 + (CGFloat(GameManager.shared.level - 1) * 0.1)
+        let currentLevelSpeed = snakeSpeed * levelMultiplier
+
         snakeVelocity = CGVector(
-            dx: cos(randomStartAngle) * snakeSpeed, dy: sin(randomStartAngle) * snakeSpeed)
+            dx: cos(randomStartAngle) * currentLevelSpeed,
+            dy: sin(randomStartAngle) * currentLevelSpeed)
         tileMap.addChild(snakeNode)
 
         // Init history for segments to sit on
@@ -614,7 +620,12 @@ class GameScene: SKScene {
             let change = CGFloat.random(in: -CGFloat.pi / 3...CGFloat.pi / 3)
             let newAngle = currentAngle + change
 
-            snakeVelocity = CGVector(dx: cos(newAngle) * snakeSpeed, dy: sin(newAngle) * snakeSpeed)
+            // Recalculate speed based on level
+            let levelMultiplier = 1.0 + (CGFloat(GameManager.shared.level - 1) * 0.1)
+            let currentLevelSpeed = snakeSpeed * levelMultiplier
+
+            snakeVelocity = CGVector(
+                dx: cos(newAngle) * currentLevelSpeed, dy: sin(newAngle) * currentLevelSpeed)
         }
 
         let dx = snakeVelocity.dx * dt

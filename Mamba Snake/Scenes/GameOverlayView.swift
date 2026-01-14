@@ -9,6 +9,11 @@ struct GameOverlayView: View {
     var onPauseToggle: () -> Void
     var onContinue: () -> Void
 
+    @State private var showLeaderboard = false
+    @State private var showNicknamePrompt = false
+    @State private var tempNickname = ""
+    @State private var isEditingFromMenu = false
+
     var body: some View {
         ZStack {
             // MARK: - HUD
@@ -42,6 +47,14 @@ struct GameOverlayView: View {
             {
                 crashContent
             }
+
+            // MARK: - Nickname Prompt
+            if showNicknamePrompt {
+                nicknamePromptContent
+            }
+        }
+        .sheet(isPresented: $showLeaderboard) {
+            LeaderboardView(isPresented: $showLeaderboard)
         }
     }
 
@@ -204,6 +217,8 @@ struct GameOverlayView: View {
                     Label("Swipe to Turn", systemImage: "hand.draw.fill")
                     Label("Eat Bugs to Grow", systemImage: "ant.fill")
                     Label("Avoid Walls & Tail", systemImage: "xmark.octagon.fill")
+                    Label("Faster & Bigger Every Lvl", systemImage: "bolt.fill")
+                    Label("+1 Life Every 10 Lvl", systemImage: "heart.circle.fill")
                 }
                 .font(.title3)
                 .foregroundColor(.white)
@@ -211,21 +226,85 @@ struct GameOverlayView: View {
 
                 Spacer()
 
-                Button(action: onStart) {
-                    Text("TAP TO PLAY")
-                        .font(.title2)
-                        .fontWeight(.heavy)
-                        .foregroundColor(.white)
-                        .frame(width: 220, height: 60)
-                        .background(Color.green)
-                        .cornerRadius(30)
-                        .shadow(radius: 10)
+                // Buttons Stack
+                VStack(spacing: 15) {
+                    Button(action: {
+                        if gameManager.nickname.isEmpty {
+                            isEditingFromMenu = false
+                            showNicknamePrompt = true
+                        } else {
+                            onStart()
+                        }
+                    }) {
+                        Text("TAP TO PLAY")
+                            .font(.title2)
+                            .fontWeight(.heavy)
+                            .foregroundColor(.white)
+                            .frame(width: 220, height: 60)
+                            .background(Color.green)
+                            .cornerRadius(30)
+                            .shadow(radius: 10)
+                    }
+
+                    if !gameManager.nickname.isEmpty {
+                        Button(action: {
+                            tempNickname = gameManager.nickname
+                            isEditingFromMenu = true
+                            showNicknamePrompt = true
+                        }) {
+                            VStack(spacing: 5) {
+                                Text("MY PROFILE")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.6))
+
+                                HStack(spacing: 6) {
+                                    Text(gameManager.nickname)
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.green)
+
+                                    Text("EDIT")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.orange)
+                                        .cornerRadius(8)
+                                }
+
+                                Text("Best Score: \(gameManager.highScore)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.yellow)
+                            }
+                            .frame(maxWidth: 200)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(15)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 15)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            )
+                        }
+                    }
+
+                    Button(action: { showLeaderboard = true }) {
+                        HStack {
+                            Image(systemName: "list.number")
+                            Text("LEADERBOARD")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.yellow)
+                        .padding()
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(15)
+                    }
                 }
+                .padding(.bottom, 20)
 
                 Text("Developed by Erdinç Yılmaz")
                     .font(.caption)
                     .foregroundColor(.gray)
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 20)
             }
         }
     }
@@ -275,6 +354,13 @@ struct GameOverlayView: View {
                         .cornerRadius(25)
                         .padding(.top, 20)
                 }
+
+                Button(action: { showLeaderboard = true }) {
+                    Text("VIEW LEADERBOARD")
+                        .font(.headline)
+                        .foregroundColor(.yellow)
+                        .padding()
+                }
             }
             .padding(40)
             .background(Color(red: 0.1, green: 0.12, blue: 0.18))
@@ -309,6 +395,19 @@ struct GameOverlayView: View {
                             RoundedRectangle(cornerRadius: 30).stroke(Color.white, lineWidth: 2)
                         )
                 }
+
+                Button(action: { showLeaderboard = true }) {
+                    HStack {
+                        Image(systemName: "list.number")
+                        Text("LEADERBOARD")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.yellow)
+                    .padding()
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(15)
+                }
+                .padding(.top, 10)
             }
         }
     }
@@ -338,6 +437,59 @@ struct GameOverlayView: View {
                         .shadow(radius: 10)
                 }
             }
+        }
+    }
+
+    var nicknamePromptContent: some View {
+        ZStack {
+            Color.black.opacity(0.8).edgesIgnoringSafeArea(.all)
+
+            VStack(spacing: 20) {
+                Text(isEditingFromMenu ? "CHANGE NICKNAME" : "ENTER NICKNAME")
+                    .font(.headline)
+                    .foregroundColor(.yellow)
+
+                TextField("Nickname", text: $tempNickname)
+                    .padding()
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(10)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .submitLabel(.done)
+
+                HStack(spacing: 20) {
+                    if isEditingFromMenu {
+                        Button("Cancel") {
+                            showNicknamePrompt = false
+                        }
+                        .foregroundColor(.gray)
+                    }
+
+                    Button(action: {
+                        let trimmed = tempNickname.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            gameManager.setNickname(trimmed)
+                            showNicknamePrompt = false
+                            if !isEditingFromMenu {
+                                onStart()
+                            }
+                        }
+                    }) {
+                        Text(isEditingFromMenu ? "SAVE" : "PLAY")
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 30)
+                            .padding(.vertical, 10)
+                            .background(Color.green)
+                            .foregroundColor(.white)
+                            .cornerRadius(20)
+                    }
+                }
+            }
+            .padding(30)
+            .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+            .cornerRadius(20)
+            .shadow(radius: 20)
+            .padding(40)
         }
     }
 }
