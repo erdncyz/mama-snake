@@ -202,12 +202,12 @@ struct GameOverlayView: View {
                 // Logo
                 VStack(spacing: 10) {
                     GifImageView(gifName: "LaunchScreen")
-                        .frame(width: 200, height: 200)
+                        .frame(width: 120, height: 120)
                         .cornerRadius(20)
                         .shadow(color: .green.opacity(0.5), radius: 20, x: 0, y: 0)
 
                     Text("MAMBA SNAKE")
-                        .font(.system(size: 42, weight: .heavy, design: .rounded))
+                        .font(.system(size: 32, weight: .heavy, design: .rounded))
                         .foregroundColor(.green)
                         .shadow(color: .black, radius: 2, x: 2, y: 2)
                 }
@@ -220,7 +220,7 @@ struct GameOverlayView: View {
                     Label("Faster & Bigger Every Lvl", systemImage: "bolt.fill")
                     Label("+1 Life Every 10 Lvl", systemImage: "heart.circle.fill")
                 }
-                .font(.title3)
+                .font(.callout)  // Reduced from title3
                 .foregroundColor(.white)
                 .padding()
 
@@ -299,11 +299,16 @@ struct GameOverlayView: View {
                         .cornerRadius(15)
                     }
                 }
-                .padding(.bottom, 20)
+                .padding(.bottom, 10)
 
                 Text("Developed by Erdinç Yılmaz")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundColor(.gray)
+                    .padding(.bottom, 5)
+
+                AdMobBanner()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 100)  // Adaptive banner height is usually around 50-100 depending on device, but we can set frame height or just let it be. Let's start with flexible.
                     .padding(.bottom, 20)
             }
         }

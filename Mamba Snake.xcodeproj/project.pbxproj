@@ -6,13 +6,30 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		BA60F29A2F17CF5D00B3D865 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = BA60F2992F17CF5D00B3D865 /* GoogleMobileAds */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		BA00EEEB2F11B396001C263F /* Mamba Snake.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Mamba Snake.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		BA60F29C2F17CFC400B3D865 /* Exceptions for "Mamba Snake" folder in "Mamba Snake" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Mamba-Snake-Info.plist",
+			);
+			target = BA00EEEA2F11B396001C263F /* Mamba Snake */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		BA00EEED2F11B396001C263F /* Mamba Snake */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				BA60F29C2F17CFC400B3D865 /* Exceptions for "Mamba Snake" folder in "Mamba Snake" target */,
+			);
 			path = "Mamba Snake";
 			sourceTree = "<group>";
 		};
@@ -23,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BA60F29A2F17CF5D00B3D865 /* GoogleMobileAds in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +83,7 @@
 			);
 			name = "Mamba Snake";
 			packageProductDependencies = (
+				BA60F2992F17CF5D00B3D865 /* GoogleMobileAds */,
 			);
 			productName = "Mamba Snake";
 			productReference = BA00EEEB2F11B396001C263F /* Mamba Snake.app */;
@@ -94,6 +113,9 @@
 			);
 			mainGroup = BA00EEE22F11B396001C263F;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				BA60F2982F17CF5D00B3D865 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BA00EEEC2F11B396001C263F /* Products */;
 			projectDirPath = "";
@@ -255,6 +277,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = H75Z7U427Y;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Mamba-Snake-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
@@ -287,6 +311,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = H75Z7U427Y;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Mamba-Snake-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
@@ -332,6 +358,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		BA60F2982F17CF5D00B3D865 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleads/swift-package-manager-google-mobile-ads.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.14.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BA60F2992F17CF5D00B3D865 /* GoogleMobileAds */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BA60F2982F17CF5D00B3D865 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;
+			productName = GoogleMobileAds;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = BA00EEE32F11B396001C263F /* Project object */;
 }

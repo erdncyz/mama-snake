@@ -73,6 +73,9 @@ class GameManager: ObservableObject {
         isPlaying = false
         isGameOver = true
 
+        // Show Interstitial Ad
+        AdMobService.shared.showInterstitial()
+
         if score > highScore {
             highScore = score
             UserDefaults.standard.set(highScore, forKey: "HighScore")

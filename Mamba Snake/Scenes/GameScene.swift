@@ -201,8 +201,8 @@ class GameScene: SKScene {
         gridSize = availableWidth / targetVisibleCols
 
         let visibleCols = Int(targetVisibleCols)
-        // HUD için üstten boşluk bırak (Daha az boşluk: 110pt)
-        let hudMargin: CGFloat = 84.0
+        // HUD için üstten boşluk bırak (Daha az boşluk: 115pt - HUD'a yakın)
+        let hudMargin: CGFloat = 85.0
         // iPhone Home Indicator için alttan boşluk bırak
         let safeAreaBottom: CGFloat = 20.0
 
