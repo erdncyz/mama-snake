@@ -7,6 +7,10 @@ struct MambaSnakeApp: App {
             ContentView()
                 .ignoresSafeArea()
                 .statusBar(hidden: true)
+                .onAppear {
+                    // Request IDFA tracking permission
+                    AdMobService.shared.requestTracking()
+                }
         }
     }
 }

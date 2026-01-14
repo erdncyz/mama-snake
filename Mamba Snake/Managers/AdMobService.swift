@@ -7,6 +7,12 @@ import SwiftUI
 #if canImport(GoogleMobileAds)
     import GoogleMobileAds
 #endif
+#if canImport(AppTrackingTransparency)
+    import AppTrackingTransparency
+#endif
+#if canImport(AdSupport)
+    import AdSupport
+#endif
 
 class AdMobService: NSObject {
     static let shared = AdMobService()
@@ -30,8 +36,39 @@ class AdMobService: NSObject {
     override private init() {
         super.init()
         #if canImport(GoogleMobileAds)
-            MobileAds.shared.start(completionHandler: nil)
-            loadInterstitial()
+            // MobileAds.shared.start will be called after tracking request
+        #endif
+    }
+
+    func requestTracking() {
+        #if canImport(AppTrackingTransparency)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                ATTrackingManager.requestTrackingAuthorization { status in
+                    switch status {
+                    case .authorized:
+                        print("Tracking Authorized")
+                    case .denied, .restricted, .notDetermined:
+                        print("Tracking Denied/Restricted/NotDetermined")
+                    @unknown default:
+                        break
+                    }
+
+                    // Start Ads SDK regardless of status
+                    #if canImport(GoogleMobileAds)
+                        MobileAds.shared.start()
+                        // Load initial ads
+                        AdMobService.shared.loadInterstitial()
+                        AdMobService.shared.loadRewardedAd()
+                    #endif
+                }
+            }
+        #else
+            // Fallback for older iOS
+            #if canImport(GoogleMobileAds)
+                MobileAds.shared.start()
+                loadInterstitial()
+                loadRewardedAd()
+            #endif
         #endif
     }
 

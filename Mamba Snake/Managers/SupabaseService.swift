@@ -67,7 +67,25 @@ class SupabaseService: ObservableObject {
     }
 
     /// Yeni skor gönderir
+    /// Yeni skor gönderir veya mevcut en yüksek skoru günceller
     func submitScore(nickname: String, score: Int, level: Int) async throws {
+        // 1. Önce bu kullanıcının mevcut kaydı var mı kontrol et
+        if let existingBest = try? await fetchUserBest(nickname: nickname) {
+            // Kayıt var. Yeni skor daha yüksekse güncelle.
+            if score > existingBest.score {
+                print("New high score! Updating existing entry.")
+                try await updateScore(id: existingBest.id!, newScore: score, newLevel: level)
+            } else {
+                print("Score is not higher than existing best. Skipping.")
+            }
+        } else {
+            // Kayıt yok. Yeni oluştur.
+            print("No existing entry found. Creating new score.")
+            try await postNewScore(nickname: nickname, score: score, level: level)
+        }
+    }
+
+    private func postNewScore(nickname: String, score: Int, level: Int) async throws {
         guard let url = URL(string: "\(projectURL)/rest/v1/\(tableName)") else {
             throw URLError(.badURL)
         }
@@ -79,10 +97,34 @@ class SupabaseService: ObservableObject {
         request.httpMethod = "POST"
         addHeaders(to: &request)
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue("return=representation", forHTTPHeaderField: "Prefer")  // İsteğe bağlı
+        request.addValue("return=representation", forHTTPHeaderField: "Prefer")
 
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(newScore)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+            (200...299).contains(httpResponse.statusCode)
+        else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    private func updateScore(id: Int, newScore: Int, newLevel: Int) async throws {
+        // id'ye göre güncelle
+        let query = "id=eq.\(id)"
+        guard let url = URL(string: "\(projectURL)/rest/v1/\(tableName)?\(query)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        addHeaders(to: &request)
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body = ["score": newScore, "level": newLevel]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
 
