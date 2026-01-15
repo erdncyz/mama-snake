@@ -271,26 +271,6 @@ class GameScene: SKScene {
 
         bugNode.zPosition = 10
 
-        // Görünürlük artırma efektleri
-        // 1. Glow efekti (parlak yeşil aura)
-        let glowNode = SKSpriteNode(texture: bugNode.texture)
-        glowNode.size = bugNode.size
-        glowNode.zPosition = -1
-        glowNode.alpha = 0.6
-        glowNode.color = .green
-        glowNode.colorBlendFactor = 0.8
-        bugNode.addChild(glowNode)
-
-        // Glow animasyonu (pulse effect)
-        let scaleUp = SKAction.scale(to: 1.2, duration: 0.5)
-        let scaleDown = SKAction.scale(to: 1.0, duration: 0.5)
-        let pulse = SKAction.sequence([scaleUp, scaleDown])
-        glowNode.run(SKAction.repeatForever(pulse))
-
-        // 2. Hafif renk tonu (GIF'i biraz daha canlı yapar)
-        bugNode.color = SKColor(red: 0.2, green: 1.0, blue: 0.3, alpha: 1.0)
-        bugNode.colorBlendFactor = 0.3  // %30 renk karışımı
-
         // Böceği ekranın en altına, ortaya yerleştir (Bix Challenge tarzı)
         bugGridPos = (cols / 2, 0)  // En altta, ortada (border üzerinde)
         let bugX = CGFloat(bugGridPos.x) * gridSize + gridSize / 2
@@ -829,9 +809,12 @@ class GameScene: SKScene {
         refreshTileMap()
         let pct = Float(filledCount) / Float(totalCells) * 100.0
 
+        // Her doldurulan hücre için puan ver (ne kadar çok alan tararsa o kadar çok puan)
+        let earnedPoints = filledCount * 2
+        
         DispatchQueue.main.async {
             GameManager.shared.percentCovered = pct
-            GameManager.shared.score += 100
+            GameManager.shared.score += earnedPoints
         }
         playSound(.score)  // Score/Confirm
     }

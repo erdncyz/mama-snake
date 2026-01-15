@@ -132,7 +132,7 @@ class SupabaseService: ObservableObject {
         }
     }
 
-    private func updateScore(id: UUID, newScore: Int, newLevel: Int) async throws {
+    private func updateScore(id: String, newScore: Int, newLevel: Int) async throws {
         // id'ye göre güncelle
         let query = "id=eq.\(id)"
         guard let url = URL(string: "\(projectURL)/rest/v1/\(tableName)?\(query)") else {
