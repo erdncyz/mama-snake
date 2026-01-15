@@ -247,7 +247,6 @@ struct LeaderboardView: View {
 
                 let (fetchedTop, fetchedUser) = try await (top, user)
 
-                // Main thread update (SwiftUI handles state updates on @State automatically safely if on MainActor, but explicit better)
                 await MainActor.run {
                     self.topScores = fetchedTop
                     self.userBest = fetchedUser

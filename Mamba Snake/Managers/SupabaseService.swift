@@ -20,11 +20,12 @@ class SupabaseService: ObservableObject {
 
     // MARK: - API Calls
 
-    /// En yüksek 5 skoru getirir
+    /// En yüksek 10 skoru getirir (her nickname için sadece en yüksek skor)
     func fetchTopScores() async throws -> [ScoreEntry] {
+        // Tüm skorları getir, sonra client-side her nickname için en yüksek skoru filtrele
         guard
             let url = URL(
-                string: "\(projectURL)/rest/v1/\(tableName)?select=*&order=score.desc&limit=10")
+                string: "\(projectURL)/rest/v1/\(tableName)?select=*&order=score.desc&limit=100")
         else {
             throw URLError(.badURL)
         }
@@ -42,13 +43,34 @@ class SupabaseService: ObservableObject {
             print("Raw JSON Response: \(jsonString)")
         }
 
-        return try decoder.decode([ScoreEntry].self, from: data)
+        let allScores = try decoder.decode([ScoreEntry].self, from: data)
+        
+        // Her nickname için sadece en yüksek skoru tut
+        var bestScoresByNickname: [String: ScoreEntry] = [:]
+        for entry in allScores {
+            let lowercasedNickname = entry.nickname.lowercased()
+            if let existing = bestScoresByNickname[lowercasedNickname] {
+                if entry.score > existing.score {
+                    bestScoresByNickname[lowercasedNickname] = entry
+                }
+            } else {
+                bestScoresByNickname[lowercasedNickname] = entry
+            }
+        }
+        
+        // Skora göre sırala ve ilk 10'u döndür
+        let uniqueTopScores = bestScoresByNickname.values
+            .sorted { $0.score > $1.score }
+            .prefix(10)
+        
+        return Array(uniqueTopScores)
     }
 
     /// Kullanıcının kendi en yüksek skorunu getirir
     func fetchUserBest(nickname: String) async throws -> ScoreEntry? {
         // Nickname'e göre filtrele, skora göre sırala, ilkini al
-        let query = "nickname=eq.\(nickname)&order=score.desc&limit=1"
+        let encodedNickname = nickname.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? nickname
+        let query = "nickname=eq.\(encodedNickname)&order=score.desc&limit=1"
         guard let url = URL(string: "\(projectURL)/rest/v1/\(tableName)?select=*&\(query)") else {
             throw URLError(.badURL)
         }
@@ -66,7 +88,6 @@ class SupabaseService: ObservableObject {
         return results.first
     }
 
-    /// Yeni skor gönderir
     /// Yeni skor gönderir veya mevcut en yüksek skoru günceller
     func submitScore(nickname: String, score: Int, level: Int) async throws {
         // 1. Önce bu kullanıcının mevcut kaydı var mı kontrol et
