@@ -14,22 +14,9 @@
 		BA00EEEB2F11B396001C263F /* Mamba Snake.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Mamba Snake.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		BA60F29C2F17CFC400B3D865 /* Exceptions for "Mamba Snake" folder in "Mamba Snake" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"Mamba-Snake-Info.plist",
-			);
-			target = BA00EEEA2F11B396001C263F /* Mamba Snake */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		BA00EEED2F11B396001C263F /* Mamba Snake */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				BA60F29C2F17CFC400B3D865 /* Exceptions for "Mamba Snake" folder in "Mamba Snake" target */,
-			);
 			path = "Mamba Snake";
 			sourceTree = "<group>";
 		};
@@ -274,7 +261,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = H75Z7U427Y;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Mamba-Snake-Info.plist";
@@ -289,7 +276,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.mamba.snake;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -308,7 +295,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = H75Z7U427Y;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Mamba-Snake-Info.plist";
@@ -323,7 +310,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.mamba.snake;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
