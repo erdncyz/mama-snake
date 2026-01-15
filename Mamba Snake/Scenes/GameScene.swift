@@ -441,6 +441,10 @@ class GameScene: SKScene {
                 let rotateAction = SKAction.rotate(
                     toAngle: currentDirection.angle, duration: 0.05, shortestUnitArc: true)  // Bix Challenge tarzı hızlı dönüş
                 bugNode.run(rotateAction)
+            } else {
+                // U-turn engellendiğinde nextDirection'ı temizle
+                // böylece yeni input alınabilir
+                nextDirection = .none
             }
         }
 
@@ -473,13 +477,30 @@ class GameScene: SKScene {
         var finalPos = nextPos
 
         // Sonra sınırların içine zorla (Asla dışarı çıkamaz)
+        // Hangi duvara çarptığını takip et
+        var hitLeft = false
+        var hitRight = false
+        var hitBottom = false
+        var hitTop = false
+        
         // Sol ve Alt sınır (0 yerine radius kadar içeride durmalı)
-        if finalPos.x < radius { finalPos.x = radius }
-        if finalPos.y < radius { finalPos.y = radius }
+        if finalPos.x < radius { finalPos.x = radius; hitLeft = true }
+        if finalPos.y < radius { finalPos.y = radius; hitBottom = true }
 
         // Sağ ve Üst sınır (Width/Height yerine radius kadar içeride durmalı)
-        if finalPos.x > mapWidth - radius { finalPos.x = mapWidth - radius }
-        if finalPos.y > mapHeight - radius { finalPos.y = mapHeight - radius }
+        if finalPos.x > mapWidth - radius { finalPos.x = mapWidth - radius; hitRight = true }
+        if finalPos.y > mapHeight - radius { finalPos.y = mapHeight - radius; hitTop = true }
+
+        // Duvara çarptıysa, sadece o yöne gidişi durdur (ters yöne veya dik yönlere gidebilsin)
+        // currentDirection'ı .none yapmak yerine, sadece çarpılan yönü engelleyen bir blockedDirection tutuyoruz
+        // Ama daha basit çözüm: Duvara çarptığında currentDirection'ı sıfırla ama nextDirection'ı da temizle
+        if (hitLeft && currentDirection == .left) ||
+           (hitRight && currentDirection == .right) ||
+           (hitBottom && currentDirection == .down) ||
+           (hitTop && currentDirection == .up) {
+            currentDirection = .none
+            nextDirection = .none  // Böylece yeni input bekler
+        }
 
         // Pozisyonu güncelle
         bugNode.position = finalPos
