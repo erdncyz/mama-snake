@@ -2,12 +2,14 @@ import SwiftUI
 
 @main
 struct MambaSnakeApp: App {
-    @ObservedObject private var featureService = FirebaseFeatureService.shared
+    @StateObject private var featureService: FirebaseFeatureService
 
     init() {
         FirebaseService.configure()
         FirebaseTelemetryService.shared.configure()
-        FirebaseFeatureService.shared.start()
+        let featureService = FirebaseFeatureService.shared
+        _featureService = StateObject(wrappedValue: featureService)
+        featureService.start()
     }
 
     var body: some Scene {

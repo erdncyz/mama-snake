@@ -29,7 +29,12 @@ final class MultiplayerService: ObservableObject {
         url: "https://mamba-snake-4532c-default-rtdb.europe-west1.firebasedatabase.app")
     private var liveRoomReference: DatabaseReference?
     private var stateHandle: DatabaseHandle?
+    private var gridHandle: DatabaseHandle?
     private var inputHandle: DatabaseHandle?
+    private var latestLiveMotion: [String: Any] = [:]
+    private var latestLiveGridRevision = -1
+    private var latestLiveFilledCells: [Int] = []
+    private var latestLiveTrailCells: [Int] = []
 
     private init() {
         // Bağlantı kopmalarında hızlı toparlanma ve yerel önbellek
@@ -174,17 +179,25 @@ final class MultiplayerService: ObservableObject {
             liveRoom.child("meta/guestID").setValue(userID)
             liveRoom.child("meta/guestID").onDisconnectRemoveValue()
 
-            // Host snapshot akışını anında al
-            stateHandle = liveRoom.child("state").observe(.value) { [weak self] data in
+            // Küçük hareket paketini yüksek frekansta al. Grid dizileri bu
+            // callback'e dahil değildir; ilerleyen bölümlerde ana thread'i yormaz.
+            stateHandle = liveRoom.child("state/motion").observe(.value) { [weak self] data in
                 Task { @MainActor in
                     guard let self, let values = data.value as? [String: Any] else { return }
-                    self.applyLiveState(values)
+                    self.applyLiveMotion(values)
+                }
+            }
+            // Büyük hücre listeleri yalnız grid gerçekten değiştiğinde gelir.
+            gridHandle = liveRoom.child("state/grid").observe(.value) { [weak self] data in
+                Task { @MainActor in
+                    guard let self, let values = data.value as? [String: Any] else { return }
+                    self.applyLiveGrid(values)
                 }
             }
         }
     }
 
-    func sendDirection(_ direction: Direction) async {
+    func sendDirection(_ direction: Direction) {
         guard isGuest, let liveRoomReference else { return }
         // RTDB yazımı yerelde anında yankılanır; ağ gidişini beklemeye gerek yok
         liveRoomReference.child("input/direction").setValue(direction.rawValue) { _, _ in }
@@ -209,9 +222,8 @@ final class MultiplayerService: ObservableObject {
     ) async -> Bool {
         guard isHost, let liveRoomReference else { return false }
 
-        var values: [String: Any] = [
+        let motionValues: [String: Any] = [
             "sequence": sequence,
-            "gridRevision": gridRevision,
             "hostX": Double(hostPosition.x),
             "hostY": Double(hostPosition.y),
             "hostDirection": hostDirection.rawValue,
@@ -228,14 +240,16 @@ final class MultiplayerService: ObservableObject {
             "percentCovered": Double(percentCovered),
             "gameState": gameState.rawValue,
         ]
+        // Hareket paketi küçüktür ve 20 Hz gönderilir.
+        liveRoomReference.child("state/motion").setValue(motionValues) { _, _ in }
+
         if let filledCells, let trailCells {
-            values["filledCells"] = filledCells
-            values["trailCells"] = trailCells
-            // Grid içeren snapshot'lar bütün olarak yazılır
-            liveRoomReference.child("state").setValue(values) { _, _ in }
-        } else {
-            // Grid değişmediyse hücre listelerini koruyarak güncelle
-            liveRoomReference.child("state").updateChildValues(values) { _, _ in }
+            let gridValues: [String: Any] = [
+                "revision": gridRevision,
+                "filledCells": filledCells,
+                "trailCells": trailCells,
+            ]
+            liveRoomReference.child("state/grid").setValue(gridValues) { _, _ in }
         }
         return true
     }
@@ -285,7 +299,10 @@ final class MultiplayerService: ObservableObject {
     private func detachLiveRoom(removeData: Bool) {
         if let liveRoomReference {
             if let stateHandle {
-                liveRoomReference.child("state").removeObserver(withHandle: stateHandle)
+                liveRoomReference.child("state/motion").removeObserver(withHandle: stateHandle)
+            }
+            if let gridHandle {
+                liveRoomReference.child("state/grid").removeObserver(withHandle: gridHandle)
             }
             if let inputHandle {
                 liveRoomReference.child("input/direction").removeObserver(withHandle: inputHandle)
@@ -298,12 +315,26 @@ final class MultiplayerService: ObservableObject {
             }
         }
         stateHandle = nil
+        gridHandle = nil
         inputHandle = nil
         liveRoomReference = nil
     }
 
-    /// RTDB'den gelen canlı oyun durumunu snapshot'a çevirir (yalnızca misafir).
-    private func applyLiveState(_ values: [String: Any]) {
+    private func applyLiveMotion(_ values: [String: Any]) {
+        latestLiveMotion = values
+        assembleLiveSnapshot()
+    }
+
+    private func applyLiveGrid(_ values: [String: Any]) {
+        latestLiveGridRevision = integer("revision", in: values)
+        latestLiveFilledCells = integerArray("filledCells", in: values)
+        latestLiveTrailCells = integerArray("trailCells", in: values)
+        assembleLiveSnapshot()
+    }
+
+    /// Ayrı gelen motion ve grid kanallarını tek render snapshot'ında birleştirir.
+    private func assembleLiveSnapshot() {
+        let values = latestLiveMotion
         guard value("hostX", in: values) != nil,
             value("guestX", in: values) != nil,
             value("snakeX", in: values) != nil
@@ -311,7 +342,7 @@ final class MultiplayerService: ObservableObject {
 
         latestSnapshot = MultiplayerGameSnapshot(
             sequence: integer("sequence", in: values),
-            gridRevision: integer("gridRevision", in: values),
+            gridRevision: latestLiveGridRevision,
             hostX: value("hostX", in: values) ?? 0,
             hostY: value("hostY", in: values) ?? 0,
             hostDirection: Direction(rawValue: values["hostDirection"] as? String ?? "") ?? .none,
@@ -329,8 +360,8 @@ final class MultiplayerService: ObservableObject {
             level: max(1, integer("level", in: values)),
             percentCovered: Float(value("percentCovered", in: values) ?? 0),
             gameState: GameState(rawValue: values["gameState"] as? String ?? "") ?? .ready,
-            filledCells: integerArray("filledCells", in: values),
-            trailCells: integerArray("trailCells", in: values)
+            filledCells: latestLiveFilledCells,
+            trailCells: latestLiveTrailCells
         )
     }
 
@@ -412,6 +443,10 @@ final class MultiplayerService: ObservableObject {
         latestSnapshot = nil
         roomReference = nil
         liveRoomReference = nil
+        latestLiveMotion = [:]
+        latestLiveGridRevision = -1
+        latestLiveFilledCells = []
+        latestLiveTrailCells = []
         userID = ""
     }
 }

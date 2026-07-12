@@ -60,24 +60,12 @@ struct ContentView: View {
                                 scene.startLevel()
                             }
                             .gesture(
-                                DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                                    .onEnded { value in
-                                        let horizontal = value.translation.width
-                                        let vertical = value.translation.height
-
-                                        if abs(horizontal) > abs(vertical) {
-                                            if horizontal > 0 {
-                                                scene.handleInput(direction: .right)
-                                            } else {
-                                                scene.handleInput(direction: .left)
-                                            }
-                                        } else {
-                                            if vertical > 0 {
-                                                scene.handleInput(direction: .down)
-                                            } else {
-                                                scene.handleInput(direction: .up)
-                                            }
-                                        }
+                                DragGesture(minimumDistance: 6, coordinateSpace: .local)
+                                    .onChanged { value in
+                                        scene.handleSwipe(translation: value.translation)
+                                    }
+                                    .onEnded { _ in
+                                        scene.endSwipe()
                                     }
                             )
                             .onTapGesture { location in

@@ -12,15 +12,28 @@ extension GameScene {
     func setupGestures(view: SKView) {
     }
 
+    func handleSwipe(translation: CGSize) {
+        guard !hasHandledSwipeInput else { return }
+        hasHandledSwipeInput = true
+
+        if abs(translation.width) > abs(translation.height) {
+            handleInput(direction: translation.width > 0 ? .right : .left)
+        } else {
+            handleInput(direction: translation.height > 0 ? .down : .up)
+        }
+    }
+
+    func endSwipe() {
+        hasHandledSwipeInput = false
+    }
+
     func handleInput(direction: Direction) {
         guard currentState == .playing else { return }
 
         if GameManager.shared.isMultiplayer && MultiplayerService.shared.isGuest {
             // Anında görsel tepki: yerel tahmin uygula, sonra host'a gönder
             applyLocalGuestPrediction(direction)
-            Task {
-                await MultiplayerService.shared.sendDirection(direction)
-            }
+            MultiplayerService.shared.sendDirection(direction)
             return
         }
 

@@ -252,11 +252,19 @@ extension GameScene {
 
     func applyLatestMultiplayerSnapshot() {
         guard let snapshot = MultiplayerService.shared.latestSnapshot,
-            snapshot.sequence > lastAppliedSequence,
             let secondBugNode,
             bugNode != nil,
             snakeNode != nil
         else { return }
+
+        // Grid ayrı RTDB kanalından gelebilir ve motion ile aynı sequence'i
+        // taşıyabilir. Önce grid'i uygula, sonra eski motion paketini ele.
+        if snapshot.gridRevision != lastAppliedGridRevision {
+            applyRemoteGrid(snapshot)
+            lastAppliedGridRevision = snapshot.gridRevision
+        }
+
+        guard snapshot.sequence > lastAppliedSequence else { return }
 
         if snapshot.level != GameManager.shared.level {
             GameManager.shared.level = snapshot.level
@@ -266,27 +274,41 @@ extension GameScene {
 
         let shouldSnapToTargets = !hasRemoteTargets
         lastAppliedSequence = snapshot.sequence
-
-        let previousSnakeTarget = remoteSnakeTarget
-        let arrivalTime = CACurrentMediaTime()
-        let elapsed = arrivalTime - lastSnapshotArrivalTime
-        lastSnapshotArrivalTime = arrivalTime
+        lastSnapshotArrivalTime = CACurrentMediaTime()
 
         remoteHostTarget = denormalizedPosition(x: snapshot.hostX, y: snapshot.hostY)
         remoteGuestTarget = denormalizedPosition(x: snapshot.guestX, y: snapshot.guestY)
-        remoteSnakeTarget = denormalizedPosition(x: snapshot.snakeX, y: snapshot.snakeY)
-        remoteSnakeBodyTargets = snapshot.snakeBody.map {
+        let authoritativeSnakePosition = denormalizedPosition(
+            x: snapshot.snakeX, y: snapshot.snakeY)
+        let authoritativeSnakeBodyPositions = snapshot.snakeBody.map {
             denormalizedPosition(x: Double($0.x), y: Double($0.y))
         }
 
-        // Yılanın hızını ardışık snapshot'lardan tahmin et (dead reckoning için)
-        if !shouldSnapToTargets, elapsed > 0.02, elapsed < 0.8 {
-            remoteSnakeVelocity = CGVector(
-                dx: (remoteSnakeTarget.x - previousSnakeTarget.x) / CGFloat(elapsed),
-                dy: (remoteSnakeTarget.y - previousSnakeTarget.y) / CGFloat(elapsed))
+        if !shouldSnapToTargets {
+            remoteSnakeVelocity = normalizedSnakeVelocity(
+                from: lastAuthoritativeSnakePosition,
+                to: authoritativeSnakePosition)
+            if lastAuthoritativeSnakeBodyPositions.count
+                == authoritativeSnakeBodyPositions.count
+            {
+                remoteSnakeBodyVelocities = zip(
+                    lastAuthoritativeSnakeBodyPositions,
+                    authoritativeSnakeBodyPositions
+                ).map { normalizedSnakeVelocity(from: $0.0, to: $0.1) }
+            } else {
+                remoteSnakeBodyVelocities = Array(
+                    repeating: .zero, count: authoritativeSnakeBodyPositions.count)
+            }
         } else {
             remoteSnakeVelocity = .zero
+            remoteSnakeBodyVelocities = Array(
+                repeating: .zero, count: authoritativeSnakeBodyPositions.count)
         }
+
+        lastAuthoritativeSnakePosition = authoritativeSnakePosition
+        lastAuthoritativeSnakeBodyPositions = authoritativeSnakeBodyPositions
+        remoteSnakeTarget = authoritativeSnakePosition
+        remoteSnakeBodyTargets = authoritativeSnakeBodyPositions
         hasRemoteTargets = true
 
         if shouldSnapToTargets {
@@ -319,11 +341,6 @@ extension GameScene {
             secondBugNode.zRotation = snapshot.guestDirection.angle
         }
 
-        if snapshot.gridRevision != lastAppliedGridRevision {
-            applyRemoteGrid(snapshot)
-            lastAppliedGridRevision = snapshot.gridRevision
-        }
-
         currentState = snapshot.gameState
         lives = snapshot.lives
         GameManager.shared.applyMultiplayerSnapshot(snapshot)
@@ -332,32 +349,63 @@ extension GameScene {
     func interpolateRemoteEntities(dt: CGFloat) {
         guard hasRemoteTargets, let secondBugNode else { return }
 
-        // Dead reckoning: hedefleri bilinen yön ve hızla her kare ilerlet.
-        // Böylece hareket, yeni snapshot beklemeden gerçek oyun hızında akar.
-        if currentState == .playing {
+        let snapshotAge = CACurrentMediaTime() - lastSnapshotArrivalTime
+        let canExtrapolateRemoteEntities = currentState == .playing && snapshotAge < 0.2
+        let canExtrapolateLocalGuest = currentState == .playing
+
+        if canExtrapolateRemoteEntities {
             remoteHostTarget = advancedTarget(
                 remoteHostTarget, direction: currentDirection, dt: dt)
-            remoteGuestTarget = advancedTarget(
-                remoteGuestTarget, direction: secondCurrentDirection, dt: dt)
             remoteSnakeTarget = clampedToMap(
                 CGPoint(
                     x: remoteSnakeTarget.x + remoteSnakeVelocity.dx * dt,
                     y: remoteSnakeTarget.y + remoteSnakeVelocity.dy * dt))
+            for index in remoteSnakeBodyTargets.indices
+            where index < remoteSnakeBodyVelocities.count {
+                let target = remoteSnakeBodyTargets[index]
+                let velocity = remoteSnakeBodyVelocities[index]
+                remoteSnakeBodyTargets[index] = clampedToMap(
+                    CGPoint(
+                        x: target.x + velocity.dx * dt,
+                        y: target.y + velocity.dy * dt))
+            }
+        }
+        if canExtrapolateLocalGuest {
+            remoteGuestTarget = advancedTarget(
+                remoteGuestTarget, direction: secondCurrentDirection, dt: dt)
         }
 
-        let blend = min(1, dt * 18)
-
-        bugNode.position = interpolated(
-            from: bugNode.position, to: remoteHostTarget, amount: blend)
-        secondBugNode.position = interpolated(
-            from: secondBugNode.position, to: remoteGuestTarget, amount: blend)
-        snakeNode.position = interpolated(
-            from: snakeNode.position, to: remoteSnakeTarget, amount: blend)
+        bugNode.position = predictedBugPosition(
+            from: bugNode.position,
+            authoritativeTarget: remoteHostTarget,
+            direction: currentDirection,
+            shouldAdvance: canExtrapolateRemoteEntities,
+            dt: dt)
+        secondBugNode.position = predictedLocalGuestPosition(
+            from: secondBugNode.position,
+            authoritativeTarget: remoteGuestTarget,
+            direction: secondCurrentDirection,
+            shouldAdvance: canExtrapolateLocalGuest,
+            dt: dt)
+        snakeNode.position = predictedSnakePosition(
+            from: snakeNode.position,
+            authoritativeTarget: remoteSnakeTarget,
+            velocity: remoteSnakeVelocity,
+            shouldAdvance: canExtrapolateRemoteEntities,
+            dt: dt)
         snakePosition = snakeNode.position
 
-        for (segment, target) in zip(snakeBody, remoteSnakeBodyTargets) {
-            segment.position = interpolated(from: segment.position, to: target, amount: blend)
+        for index in snakeBody.indices where index < remoteSnakeBodyTargets.count {
+            let velocity = index < remoteSnakeBodyVelocities.count
+                ? remoteSnakeBodyVelocities[index] : .zero
+            snakeBody[index].position = predictedSnakePosition(
+                from: snakeBody[index].position,
+                authoritativeTarget: remoteSnakeBodyTargets[index],
+                velocity: velocity,
+                shouldAdvance: canExtrapolateRemoteEntities,
+                dt: dt)
         }
+        updateRemoteSnakeRotations()
     }
 
     /// Misafirin kendi böceğine anında tepki: yönü yerel olarak uygular,
@@ -372,8 +420,7 @@ extension GameScene {
         predictedGuestDirection = direction
         predictedGuestDirectionTime = CACurrentMediaTime()
         secondCurrentDirection = direction
-        secondBugNode.run(
-            SKAction.rotate(toAngle: direction.angle, duration: 0.05, shortestUnitArc: true))
+        secondBugNode.zRotation = direction.angle
     }
 
     private func advancedTarget(
@@ -393,6 +440,115 @@ extension GameScene {
                 y: target.y + offset.dy * bugSpeed * dt))
     }
 
+    private func predictedBugPosition(
+        from position: CGPoint,
+        authoritativeTarget: CGPoint,
+        direction: Direction,
+        shouldAdvance: Bool,
+        dt: CGFloat
+    ) -> CGPoint {
+        let predictedPosition = shouldAdvance
+            ? advancedTarget(position, direction: direction, dt: dt)
+            : position
+        let errorX = authoritativeTarget.x - predictedPosition.x
+        let errorY = authoritativeTarget.y - predictedPosition.y
+        let errorDistance = hypot(errorX, errorY)
+
+        if errorDistance > gridSize * 8 {
+            return authoritativeTarget
+        }
+        guard currentState != .playing || direction == .none || errorDistance > gridSize * 3
+        else { return predictedPosition }
+
+        return interpolated(
+            from: predictedPosition,
+            to: authoritativeTarget,
+            amount: min(1, dt * 30))
+    }
+
+    private func predictedLocalGuestPosition(
+        from position: CGPoint,
+        authoritativeTarget: CGPoint,
+        direction: Direction,
+        shouldAdvance: Bool,
+        dt: CGFloat
+    ) -> CGPoint {
+        let predictedPosition = shouldAdvance
+            ? advancedTarget(position, direction: direction, dt: dt)
+            : position
+
+        guard currentState != .playing || direction == .none else {
+            return predictedPosition
+        }
+
+        let errorDistance = hypot(
+            authoritativeTarget.x - predictedPosition.x,
+            authoritativeTarget.y - predictedPosition.y)
+        if errorDistance > gridSize * 8 {
+            return authoritativeTarget
+        }
+        return interpolated(
+            from: predictedPosition,
+            to: authoritativeTarget,
+            amount: min(1, dt * 30))
+    }
+
+    private func normalizedSnakeVelocity(from start: CGPoint, to end: CGPoint) -> CGVector {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let distance = hypot(dx, dy)
+        guard distance > 0.001 else { return .zero }
+
+        let levelMultiplier = 1 + CGFloat(GameManager.shared.level - 1) * 0.1
+        let speed = snakeSpeed * levelMultiplier
+        return CGVector(dx: dx / distance * speed, dy: dy / distance * speed)
+    }
+
+    private func predictedSnakePosition(
+        from position: CGPoint,
+        authoritativeTarget: CGPoint,
+        velocity: CGVector,
+        shouldAdvance: Bool,
+        dt: CGFloat
+    ) -> CGPoint {
+        let predictedPosition = shouldAdvance
+            ? clampedToMap(
+                CGPoint(
+                    x: position.x + velocity.dx * dt,
+                    y: position.y + velocity.dy * dt))
+            : position
+        let errorDistance = hypot(
+            authoritativeTarget.x - predictedPosition.x,
+            authoritativeTarget.y - predictedPosition.y)
+
+        if errorDistance > gridSize * 6 {
+            return authoritativeTarget
+        }
+        guard errorDistance > gridSize * 1.5 else { return predictedPosition }
+
+        return interpolated(
+            from: predictedPosition,
+            to: authoritativeTarget,
+            amount: min(1, dt * 24))
+    }
+
+    private func updateRemoteSnakeRotations() {
+        if hypot(remoteSnakeVelocity.dx, remoteSnakeVelocity.dy) > 0.001 {
+            snakeNode.zRotation = atan2(remoteSnakeVelocity.dy, remoteSnakeVelocity.dx)
+                - CGFloat.pi / 2
+        }
+
+        var leaderPosition = snakeNode.position
+        for segment in snakeBody {
+            let dx = leaderPosition.x - segment.position.x
+            let dy = leaderPosition.y - segment.position.y
+            if hypot(dx, dy) > 0.001 {
+                segment.zRotation = atan2(dy, dx) - CGFloat.pi / 2
+            }
+            leaderPosition = segment.position
+        }
+    }
+
     private func clampedToMap(_ point: CGPoint) -> CGPoint {
         let radius = gridSize / 2
         let mapWidth = CGFloat(cols) * gridSize
@@ -409,26 +565,30 @@ extension GameScene {
     }
 
     private func applyRemoteGrid(_ snapshot: MultiplayerGameSnapshot) {
-        let filled = Set(snapshot.filledCells)
-        let trails = Set(snapshot.trailCells)
+        let nextFilledCells = Set(snapshot.filledCells)
+        let nextTrailCells = Set(snapshot.trailCells)
+        let changedCells = remoteFilledCells.symmetricDifference(nextFilledCells)
+            .union(remoteTrailCells.symmetricDifference(nextTrailCells))
 
-        // Yalnızca DEĞİŞEN karoları güncelle: tüm haritayı (1890 karo) yeniden
-        // çizmek misafir tarafındaki donmanın ana kaynağıydı.
-        for x in 1..<(cols - 1) {
-            for y in 1..<(rows - 1) {
-                let index = x * rows + y
-                let newType: CellType
-                if filled.contains(index) {
-                    newType = .filled
-                } else if trails.contains(index) {
-                    newType = .trail
-                } else {
-                    newType = .empty
-                }
-                if grid[x][y] != newType {
-                    grid[x][y] = newType
-                    updateSingleTile(x: x, y: y)
-                }
+        remoteFilledCells = nextFilledCells
+        remoteTrailCells = nextTrailCells
+
+        for index in changedCells {
+            let x = index / rows
+            let y = index % rows
+            guard x > 0, x < cols - 1, y > 0, y < rows - 1 else { continue }
+
+            let newType: CellType
+            if remoteFilledCells.contains(index) {
+                newType = .filled
+            } else if remoteTrailCells.contains(index) {
+                newType = .trail
+            } else {
+                newType = .empty
+            }
+            if grid[x][y] != newType {
+                grid[x][y] = newType
+                updateSingleTile(x: x, y: y)
             }
         }
     }

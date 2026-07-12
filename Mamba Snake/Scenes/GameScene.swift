@@ -28,6 +28,7 @@ class GameScene: SKScene {
     var grid: [[CellType]] = []
     var currentDirection: Direction = .none
     var nextDirection: Direction = .none
+    var hasHandledSwipeInput = false
     var lastUpdateTime: TimeInterval = 0
     var currentState: GameState = .ready
     var isEating: Bool = false
@@ -60,6 +61,8 @@ class GameScene: SKScene {
     var lastPublishedGridRevision = -1
     var lastAppliedSequence = -1
     var lastAppliedGridRevision = -1
+    var remoteFilledCells = Set<Int>()
+    var remoteTrailCells = Set<Int>()
     var lastMultiplayerPublishTime: TimeInterval = 0
     var isMultiplayerPublishInFlight = false
     var hasPendingForcedMultiplayerPublish = false
@@ -68,25 +71,21 @@ class GameScene: SKScene {
     var remoteGuestTarget = CGPoint.zero
     var remoteSnakeTarget = CGPoint.zero
     var remoteSnakeBodyTargets: [CGPoint] = []
-    // Dead reckoning: snapshot'lar arasında hedefleri gerçek hızda ilerletmek için
     var remoteSnakeVelocity = CGVector.zero
+    var remoteSnakeBodyVelocities: [CGVector] = []
+    var lastAuthoritativeSnakePosition = CGPoint.zero
+    var lastAuthoritativeSnakeBodyPositions: [CGPoint] = []
     var lastSnapshotArrivalTime: TimeInterval = 0
     // Misafirin kendi yön girdisine anında tepki (host onayı gelene kadar)
     var predictedGuestDirection: Direction = .none
     var predictedGuestDirectionTime: TimeInterval = 0
-#if DEBUG
-    var guestMetricStart: TimeInterval = 0
-    var guestMetricFrames = 0
-    var guestMetricSlowFrames = 0
-    var guestMetricMaxDelta: TimeInterval = 0
-#endif
 
     // Snake Movement History for Trail Effect
     var snakeHistory: [CGPoint] = []
     var snakeBodyCount: Int {
         return GameManager.shared.level
     }
-    let snakeSpacing: CGFloat = 6.0  // Distance between segments
+    var snakeSegmentSpacing: CGFloat { gridSize * 1.5 }
 
     var lives: Int = 3
 
@@ -172,7 +171,7 @@ class GameScene: SKScene {
     override func didMove(to view: SKView) {
         // Koordinat sistemi sol alt (0,0) olsun
         self.anchorPoint = CGPoint(x: 0, y: 0)
-        view.preferredFramesPerSecond = 60
+        view.preferredFramesPerSecond = 120
         view.ignoresSiblingOrder = true
         view.shouldCullNonVisibleNodes = true
         view.isAsynchronous = true
@@ -254,14 +253,20 @@ class GameScene: SKScene {
         secondActiveTrailCorners.removeAll(keepingCapacity: true)
         hasRemoteTargets = false
         remoteSnakeVelocity = .zero
+        remoteSnakeBodyVelocities.removeAll(keepingCapacity: true)
+        lastAuthoritativeSnakePosition = .zero
+        lastAuthoritativeSnakeBodyPositions.removeAll(keepingCapacity: true)
         lastSnapshotArrivalTime = 0
         predictedGuestDirection = .none
+        hasHandledSwipeInput = false
         lastUpdateTime = 0
         multiplayerGridRevision += 1
         if GameManager.shared.isMultiplayer {
             lastAppliedSequence = -1
             lastAppliedGridRevision = -1
             lastPublishedGridRevision = -1
+            remoteFilledCells.removeAll(keepingCapacity: true)
+            remoteTrailCells.removeAll(keepingCapacity: true)
         }
 
         // Set Borders (Now these will be off-screen)
@@ -448,10 +453,7 @@ class GameScene: SKScene {
             dy: sin(randomStartAngle) * currentLevelSpeed)
         tileMap.addChild(snakeNode)
 
-        // Init history for segments to sit on
-        for _ in 0..<(snakeBodyCount * Int(snakeSpacing)) {
-            snakeHistory.append(snakePosition)
-        }
+        snakeHistory.append(snakePosition)
     }
 
     // MARK: - Game Loop & Logic
@@ -462,11 +464,8 @@ class GameScene: SKScene {
             let rawRemoteDelta = currentTime - lastUpdateTime
             let remoteDelta = min(CGFloat(rawRemoteDelta), 0.1)
             lastUpdateTime = currentTime
-#if DEBUG
-            recordGuestFrameMetric(at: currentTime, delta: rawRemoteDelta)
-#endif
             applyLatestMultiplayerSnapshot()
-            interpolateRemoteEntities(dt: max(remoteDelta, 1.0 / 120.0))
+            interpolateRemoteEntities(dt: remoteDelta)
             return
         }
 
@@ -499,25 +498,6 @@ class GameScene: SKScene {
         updateLabels()
         publishMultiplayerSnapshot(at: currentTime)
     }
-
-#if DEBUG
-    private func recordGuestFrameMetric(at currentTime: TimeInterval, delta: TimeInterval) {
-        if guestMetricStart == 0 { guestMetricStart = currentTime }
-        guestMetricFrames += 1
-        if delta > 1.0 / 30.0 { guestMetricSlowFrames += 1 }
-        guestMetricMaxDelta = max(guestMetricMaxDelta, delta)
-
-        let duration = currentTime - guestMetricStart
-        guard duration >= 5 else { return }
-        let fps = String(format: "%.1f", Double(guestMetricFrames) / duration)
-        let maxMilliseconds = String(format: "%.1f", guestMetricMaxDelta * 1_000)
-        print("GUEST_FRAME_METRIC fps=\(fps) slow=\(guestMetricSlowFrames) max_ms=\(maxMilliseconds)")
-        guestMetricStart = currentTime
-        guestMetricFrames = 0
-        guestMetricSlowFrames = 0
-        guestMetricMaxDelta = 0
-    }
-#endif
 
     func moveBug(dt: CGFloat) {
         // 1. Handle Input Turning (Immediate)
@@ -741,33 +721,6 @@ class GameScene: SKScene {
         let dy = snakeVelocity.dy * dt
         let nextPos = CGPoint(x: snakePosition.x + dx, y: snakePosition.y + dy)
 
-        // Update History for Body
-        // Add current position to front of history
-        // To smooth it out, we record every frame or based on distance.
-        // Every frame is smoother for "follow the leader" with fixed index offset.
-        snakeHistory.insert(snakePosition, at: 0)
-
-        let requiredHistory = snakeBodyCount * Int(snakeSpacing) + 1
-        if snakeHistory.count > requiredHistory {
-            snakeHistory.removeLast(snakeHistory.count - requiredHistory)
-        }
-
-        // Update Body Segments
-        for i in 0..<snakeBody.count {
-            let historyIndex = (i + 1) * Int(snakeSpacing)
-            if historyIndex < snakeHistory.count {
-                snakeBody[i].position = snakeHistory[historyIndex]
-                snakeBody[i].zRotation = snakeNode.zRotation  // Follow rotation or calculate proper angle?
-                // Calculate proper angle for body segment
-                if historyIndex + 1 < snakeHistory.count {
-                    let p1 = snakeHistory[historyIndex]
-                    let p2 = snakeHistory[historyIndex - 1]  // Look slightly ahead
-                    let angle = atan2(p2.y - p1.y, p2.x - p1.x) - CGFloat.pi / 2
-                    snakeBody[i].zRotation = angle
-                }
-            }
-        }
-
         // Rotate Head
         let angle = atan2(snakeVelocity.dy, snakeVelocity.dx) - CGFloat.pi / 2
         snakeNode.zRotation = angle
@@ -823,8 +776,7 @@ class GameScene: SKScene {
                 y: snakePosition.y + snakeVelocity.dy * dt)
         }
         snakeNode.position = snakePosition
-
-        snakeNode.position = snakePosition
+        updateSnakeBodyAlongPath()
 
         // --- Improved Collision Detection ---
         // Calculate distance between centers
@@ -870,6 +822,82 @@ class GameScene: SKScene {
                     triggerDeathSequence(targetBug: secondBugNode)
                     return
                 }
+            }
+        }
+    }
+
+    private func updateSnakeBodyAlongPath() {
+        if snakeHistory.first != snakePosition {
+            snakeHistory.insert(snakePosition, at: 0)
+        }
+
+        let requiredDistance = snakeSegmentSpacing * CGFloat(snakeBody.count + 1)
+        trimSnakeHistory(to: requiredDistance)
+
+        for (index, segment) in snakeBody.enumerated() {
+            let targetDistance = snakeSegmentSpacing * CGFloat(index + 1)
+            let sample = snakeHistorySample(at: targetDistance)
+            segment.position = sample.position
+            if hypot(sample.direction.dx, sample.direction.dy) > 0.001 {
+                segment.zRotation = atan2(sample.direction.dy, sample.direction.dx)
+                    - CGFloat.pi / 2
+            }
+        }
+    }
+
+    private func snakeHistorySample(
+        at targetDistance: CGFloat
+    ) -> (position: CGPoint, direction: CGVector) {
+        guard let first = snakeHistory.first else {
+            return (snakePosition, snakeVelocity)
+        }
+        guard snakeHistory.count > 1 else {
+            return (first, snakeVelocity)
+        }
+
+        var traversedDistance: CGFloat = 0
+        for index in 0..<(snakeHistory.count - 1) {
+            let newerPoint = snakeHistory[index]
+            let olderPoint = snakeHistory[index + 1]
+            let dx = olderPoint.x - newerPoint.x
+            let dy = olderPoint.y - newerPoint.y
+            let pathLength = hypot(dx, dy)
+            guard pathLength > 0.001 else { continue }
+
+            if traversedDistance + pathLength >= targetDistance {
+                let amount = (targetDistance - traversedDistance) / pathLength
+                return (
+                    CGPoint(
+                        x: newerPoint.x + dx * amount,
+                        y: newerPoint.y + dy * amount),
+                    CGVector(dx: -dx, dy: -dy))
+            }
+            traversedDistance += pathLength
+        }
+
+        let lastPoint = snakeHistory[snakeHistory.count - 1]
+        let previousPoint = snakeHistory[snakeHistory.count - 2]
+        return (
+            lastPoint,
+            CGVector(
+                dx: previousPoint.x - lastPoint.x,
+                dy: previousPoint.y - lastPoint.y))
+    }
+
+    private func trimSnakeHistory(to requiredDistance: CGFloat) {
+        guard snakeHistory.count > 2 else { return }
+
+        var traversedDistance: CGFloat = 0
+        for index in 0..<(snakeHistory.count - 1) {
+            traversedDistance += hypot(
+                snakeHistory[index + 1].x - snakeHistory[index].x,
+                snakeHistory[index + 1].y - snakeHistory[index].y)
+            if traversedDistance >= requiredDistance {
+                let keepCount = index + 2
+                if snakeHistory.count > keepCount {
+                    snakeHistory.removeLast(snakeHistory.count - keepCount)
+                }
+                return
             }
         }
     }
