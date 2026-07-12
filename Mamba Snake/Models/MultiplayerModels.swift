@@ -33,6 +33,8 @@ struct MultiplayerGameSnapshot {
     let snakeX: Double
     let snakeY: Double
     let snakeBody: [CGPoint]
+    let hostTrail: [CGPoint]
+    let guestTrail: [CGPoint]
     let score: Int
     let lives: Int
     let level: Int

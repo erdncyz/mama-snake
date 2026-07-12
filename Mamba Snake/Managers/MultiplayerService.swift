@@ -212,6 +212,8 @@ final class MultiplayerService: ObservableObject {
         guestDirection: Direction,
         snakePosition: CGPoint,
         snakeBodyPositions: [CGPoint],
+        hostTrailPositions: [CGPoint],
+        guestTrailPositions: [CGPoint],
         score: Int,
         lives: Int,
         level: Int,
@@ -234,6 +236,10 @@ final class MultiplayerService: ObservableObject {
             "snakeY": Double(snakePosition.y),
             "snakeBodyX": snakeBodyPositions.map { Double($0.x) },
             "snakeBodyY": snakeBodyPositions.map { Double($0.y) },
+            "hostTrailX": hostTrailPositions.map { Double($0.x) },
+            "hostTrailY": hostTrailPositions.map { Double($0.y) },
+            "guestTrailX": guestTrailPositions.map { Double($0.x) },
+            "guestTrailY": guestTrailPositions.map { Double($0.y) },
             "score": score,
             "lives": lives,
             "level": level,
@@ -355,6 +361,12 @@ final class MultiplayerService: ObservableObject {
             snakeBody: points(
                 xValues: numberArray("snakeBodyX", in: values),
                 yValues: numberArray("snakeBodyY", in: values)),
+            hostTrail: points(
+                xValues: numberArray("hostTrailX", in: values),
+                yValues: numberArray("hostTrailY", in: values)),
+            guestTrail: points(
+                xValues: numberArray("guestTrailX", in: values),
+                yValues: numberArray("guestTrailY", in: values)),
             score: integer("score", in: values),
             lives: integer("lives", in: values),
             level: max(1, integer("level", in: values)),

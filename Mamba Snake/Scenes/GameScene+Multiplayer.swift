@@ -216,6 +216,10 @@ extension GameScene {
         let normalizedGuestPosition = normalizedPosition(secondBugNode.position)
         let normalizedSnakePosition = normalizedPosition(snakeNode.position)
         let normalizedBody = snakeBody.map { normalizedPosition($0.position) }
+        let normalizedHostTrail = activeTrailPath.isEmpty
+            ? [] : activeTrailCorners.map(normalizedPosition)
+        let normalizedGuestTrail = secondActiveTrailPath.isEmpty
+            ? [] : secondActiveTrailCorners.map(normalizedPosition)
         let sequence = multiplayerSequence
         let gridRevision = multiplayerGridRevision
         let gameState = currentState
@@ -230,6 +234,8 @@ extension GameScene {
                 guestDirection: secondCurrentDirection,
                 snakePosition: normalizedSnakePosition,
                 snakeBodyPositions: normalizedBody,
+                hostTrailPositions: normalizedHostTrail,
+                guestTrailPositions: normalizedGuestTrail,
                 score: GameManager.shared.score,
                 lives: lives,
                 level: GameManager.shared.level,
@@ -278,6 +284,12 @@ extension GameScene {
 
         remoteHostTarget = denormalizedPosition(x: snapshot.hostX, y: snapshot.hostY)
         remoteGuestTarget = denormalizedPosition(x: snapshot.guestX, y: snapshot.guestY)
+        remoteHostTrailTargets = snapshot.hostTrail.map {
+            denormalizedPosition(x: Double($0.x), y: Double($0.y))
+        }
+        remoteGuestTrailTargets = snapshot.guestTrail.map {
+            denormalizedPosition(x: Double($0.x), y: Double($0.y))
+        }
         let authoritativeSnakePosition = denormalizedPosition(
             x: snapshot.snakeX, y: snapshot.snakeY)
         let authoritativeSnakeBodyPositions = snapshot.snakeBody.map {
@@ -381,12 +393,15 @@ extension GameScene {
             direction: currentDirection,
             shouldAdvance: canExtrapolateRemoteEntities,
             dt: dt)
+        updateRemoteHostTrail()
+        let previousGuestPosition = secondBugNode.position
         secondBugNode.position = predictedLocalGuestPosition(
             from: secondBugNode.position,
             authoritativeTarget: remoteGuestTarget,
             direction: secondCurrentDirection,
             shouldAdvance: canExtrapolateLocalGuest,
             dt: dt)
+        updatePredictedGuestTrail(from: previousGuestPosition)
         snakeNode.position = predictedSnakePosition(
             from: snakeNode.position,
             authoritativeTarget: remoteSnakeTarget,
@@ -419,6 +434,11 @@ extension GameScene {
 
         predictedGuestDirection = direction
         predictedGuestDirectionTime = CACurrentMediaTime()
+        if !secondActiveTrailCorners.isEmpty,
+            secondActiveTrailCorners.last != secondBugNode.position
+        {
+            secondActiveTrailCorners.append(secondBugNode.position)
+        }
         secondCurrentDirection = direction
         secondBugNode.zRotation = direction.angle
     }
@@ -491,6 +511,60 @@ extension GameScene {
             from: predictedPosition,
             to: authoritativeTarget,
             amount: min(1, dt * 30))
+    }
+
+    private func updatePredictedGuestTrail(from previousPosition: CGPoint) {
+        guard MultiplayerService.shared.isGuest,
+            let secondBugNode,
+            let secondActiveTrailNode
+        else { return }
+
+        let x = max(0, min(cols - 1, Int(secondBugNode.position.x / gridSize)))
+        let y = max(0, min(rows - 1, Int(secondBugNode.position.y / gridSize)))
+        let cell = grid[x][y]
+        let isOutsideSafeArea = cell == .empty || cell == .trail
+
+        guard isOutsideSafeArea else {
+            secondActiveTrailPath = CGMutablePath()
+            secondActiveTrailCorners.removeAll(keepingCapacity: true)
+            secondActiveTrailNode.path = nil
+            return
+        }
+
+        if secondActiveTrailCorners.isEmpty {
+            if remoteGuestTrailTargets.isEmpty {
+                secondActiveTrailCorners.append(previousPosition)
+            } else {
+                secondActiveTrailCorners = remoteGuestTrailTargets
+            }
+        }
+
+        let path = CGMutablePath()
+        path.move(to: secondActiveTrailCorners[0])
+        for corner in secondActiveTrailCorners.dropFirst() {
+            path.addLine(to: corner)
+        }
+        path.addLine(to: secondBugNode.position)
+        secondActiveTrailPath = path
+        secondActiveTrailNode.path = path
+    }
+
+    private func updateRemoteHostTrail() {
+        guard MultiplayerService.shared.isGuest else { return }
+        guard let firstPoint = remoteHostTrailTargets.first else {
+            activeTrailPath = CGMutablePath()
+            activeTrailNode.path = nil
+            return
+        }
+
+        let path = CGMutablePath()
+        path.move(to: firstPoint)
+        for corner in remoteHostTrailTargets.dropFirst() {
+            path.addLine(to: corner)
+        }
+        path.addLine(to: bugNode.position)
+        activeTrailPath = path
+        activeTrailNode.path = path
     }
 
     private func normalizedSnakeVelocity(from start: CGPoint, to end: CGPoint) -> CGVector {
@@ -588,7 +662,9 @@ extension GameScene {
             }
             if grid[x][y] != newType {
                 grid[x][y] = newType
-                updateSingleTile(x: x, y: y)
+                if newType != .trail {
+                    updateSingleTile(x: x, y: y)
+                }
             }
         }
     }

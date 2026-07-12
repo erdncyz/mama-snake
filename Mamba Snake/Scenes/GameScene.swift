@@ -69,6 +69,8 @@ class GameScene: SKScene {
     var hasRemoteTargets = false
     var remoteHostTarget = CGPoint.zero
     var remoteGuestTarget = CGPoint.zero
+    var remoteHostTrailTargets: [CGPoint] = []
+    var remoteGuestTrailTargets: [CGPoint] = []
     var remoteSnakeTarget = CGPoint.zero
     var remoteSnakeBodyTargets: [CGPoint] = []
     var remoteSnakeVelocity = CGVector.zero
@@ -252,6 +254,8 @@ class GameScene: SKScene {
         activeTrailCorners.removeAll(keepingCapacity: true)
         secondActiveTrailCorners.removeAll(keepingCapacity: true)
         hasRemoteTargets = false
+        remoteHostTrailTargets.removeAll(keepingCapacity: true)
+        remoteGuestTrailTargets.removeAll(keepingCapacity: true)
         remoteSnakeVelocity = .zero
         remoteSnakeBodyVelocities.removeAll(keepingCapacity: true)
         lastAuthoritativeSnakePosition = .zero
