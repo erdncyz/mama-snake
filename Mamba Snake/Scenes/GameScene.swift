@@ -55,9 +55,12 @@ class GameScene: SKScene {
     var secondBugGridPos: (x: Int, y: Int) = (0, 0)
     var secondTrailStartGridPos: (x: Int, y: Int) = (0, 0)
     var secondCurrentDirection: Direction = .none
+    var lastAppliedRemoteInputSequence = 0
 
     var multiplayerSequence = 0
     var multiplayerGridRevision = 0
+    var hostTrailCellIndices = Set<Int>()
+    var guestTrailCellIndices = Set<Int>()
     var lastPublishedGridRevision = -1
     var lastAppliedSequence = -1
     var lastAppliedGridRevision = -1
@@ -251,6 +254,8 @@ class GameScene: SKScene {
             availableHeight / (CGFloat(rows) + edgeCells * 2))
 
         grid = Array(repeating: Array(repeating: .empty, count: rows), count: cols)
+        hostTrailCellIndices.removeAll(keepingCapacity: true)
+        guestTrailCellIndices.removeAll(keepingCapacity: true)
         activeTrailCorners.removeAll(keepingCapacity: true)
         secondActiveTrailCorners.removeAll(keepingCapacity: true)
         hasRemoteTargets = false
@@ -262,6 +267,7 @@ class GameScene: SKScene {
         lastAuthoritativeSnakeBodyPositions.removeAll(keepingCapacity: true)
         lastSnapshotArrivalTime = 0
         predictedGuestDirection = .none
+        lastAppliedRemoteInputSequence = MultiplayerService.shared.remoteDirectionSequence
         hasHandledSwipeInput = false
         lastUpdateTime = 0
         multiplayerGridRevision += 1
@@ -493,10 +499,13 @@ class GameScene: SKScene {
         let safeDt = min(dt, 0.1)
 
         moveBug(dt: safeDt)
+        guard currentState == .playing, !isEating else { return }
         if GameManager.shared.isMultiplayer {
             moveSecondBug(dt: safeDt)
+            guard currentState == .playing, !isEating else { return }
         }
         moveSnake(dt: safeDt)
+        guard currentState == .playing, !isEating else { return }
 
         checkWinCondition()
         updateLabels()
@@ -575,16 +584,11 @@ class GameScene: SKScene {
         if finalPos.x > mapWidth - radius { finalPos.x = mapWidth - radius; hitRight = true }
         if finalPos.y > mapHeight - radius { finalPos.y = mapHeight - radius; hitTop = true }
 
-        // Duvara çarptıysa, sadece o yöne gidişi durdur (ters yöne veya dik yönlere gidebilsin)
-        // currentDirection'ı .none yapmak yerine, sadece çarpılan yönü engelleyen bir blockedDirection tutuyoruz
-        // Ama daha basit çözüm: Duvara çarptığında currentDirection'ı sıfırla ama nextDirection'ı da temizle
-        if (hitLeft && currentDirection == .left) ||
-           (hitRight && currentDirection == .right) ||
-           (hitBottom && currentDirection == .down) ||
-           (hitTop && currentDirection == .up) {
-            currentDirection = .none
-            nextDirection = .none  // Böylece yeni input bekler
-        }
+        let hitMovementBoundary =
+            (hitLeft && currentDirection == .left)
+            || (hitRight && currentDirection == .right)
+            || (hitBottom && currentDirection == .down)
+            || (hitTop && currentDirection == .up)
 
         // Pozisyonu güncelle
         bugNode.position = finalPos
@@ -603,9 +607,15 @@ class GameScene: SKScene {
             // handleGridTransition güvenli değerlerle çağrılacak.
         }
 
-        // Track Logic Changes
-        if safeLogicX != bugGridPos.x || safeLogicY != bugGridPos.y {
-            handleGridTransition(newX: safeLogicX, newY: safeLogicY)
+        let targetGridPosition = (x: safeLogicX, y: safeLogicY)
+        for cell in traversedGridCells(from: bugGridPos, to: targetGridPosition) {
+            handleGridTransition(newX: cell.x, newY: cell.y)
+            if currentState != .playing { break }
+        }
+
+        if hitMovementBoundary {
+            currentDirection = .none
+            nextDirection = .none
         }
 
         // 5. Update Visual Trail
@@ -655,7 +665,7 @@ class GameScene: SKScene {
             if currentCell == .trail {
                 // Closing Loop!
                 bugGridPos = (newX, newY)
-                fillArea()
+                fillArea(closing: .host)
 
                 // Clear visual trail
                 activeTrailPath = CGMutablePath()
@@ -684,6 +694,7 @@ class GameScene: SKScene {
 
             // Mark new cell
             grid[newX][newY] = .trail
+            hostTrailCellIndices.insert(newX * rows + newY)
             multiplayerGridRevision += 1
             // We DO NOT update visual tile here to avoid "blocks" appearing.
             // But we MUST enable logic for enemies.
@@ -692,6 +703,28 @@ class GameScene: SKScene {
 
             bugGridPos = (newX, newY)
         }
+    }
+
+    func traversedGridCells(
+        from start: (x: Int, y: Int),
+        to end: (x: Int, y: Int)
+    ) -> [(x: Int, y: Int)] {
+        guard start != end else { return [] }
+
+        var cells: [(x: Int, y: Int)] = []
+        var current = start
+        let horizontalStep = end.x == start.x ? 0 : (end.x > start.x ? 1 : -1)
+        let verticalStep = end.y == start.y ? 0 : (end.y > start.y ? 1 : -1)
+
+        while current.x != end.x {
+            current.x += horizontalStep
+            cells.append(current)
+        }
+        while current.y != end.y {
+            current.y += verticalStep
+            cells.append(current)
+        }
+        return cells
     }
 
     // Legacy mapping (kept for reference or if we need to snap)
@@ -906,12 +939,22 @@ class GameScene: SKScene {
         }
     }
 
-    func fillArea() {
+    func fillArea(closing owner: TrailOwner) {
         let snakeGridX = Int(snakePosition.x / gridSize)
         let snakeGridY = Int(snakePosition.y / gridSize)
+        let closingTrailCells = owner == .host
+            ? hostTrailCellIndices : guestTrailCellIndices
+        let otherTrailCells = owner == .host
+            ? guestTrailCellIndices : hostTrailCellIndices
+
+        guard !closingTrailCells.isEmpty else { return }
 
         var visited = Array(repeating: Array(repeating: false, count: rows), count: cols)
         var queue: [(Int, Int)] = []
+
+        func isFloodReachable(x: Int, y: Int) -> Bool {
+            grid[x][y] == .empty || otherTrailCells.contains(x * rows + y)
+        }
 
         // Robust Start: Search for an empty cell around the snake
         // The snake might be slightly overlapping a border/trail visually,
@@ -930,7 +973,7 @@ class GameScene: SKScene {
                     let ny = centerY + dy
 
                     if nx >= 0 && nx < cols && ny >= 0 && ny < rows {
-                        if grid[nx][ny] == .empty {
+                        if isFloodReachable(x: nx, y: ny) {
                             queue.append((nx, ny))
                             visited[nx][ny] = true
                             foundStart = true
@@ -956,7 +999,7 @@ class GameScene: SKScene {
 
             for (nx, ny) in neighbors {
                 if nx >= 0 && nx < cols && ny >= 0 && ny < rows {
-                    if !visited[nx][ny] && grid[nx][ny] == .empty {
+                    if !visited[nx][ny] && isFloodReachable(x: nx, y: ny) {
                         visited[nx][ny] = true
                         queue.append((nx, ny))
                     }
@@ -971,7 +1014,8 @@ class GameScene: SKScene {
 
         for x in 0..<cols {
             for y in 0..<rows {
-                if grid[x][y] == .trail {
+                let index = x * rows + y
+                if closingTrailCells.contains(index) {
                     grid[x][y] = .filled
                     newlyFilled += 1
                 } else if grid[x][y] == .empty && !visited[x][y] {
@@ -988,6 +1032,12 @@ class GameScene: SKScene {
                     }
                 }
             }
+        }
+
+        if owner == .host {
+            hostTrailCellIndices.removeAll(keepingCapacity: true)
+        } else {
+            guestTrailCellIndices.removeAll(keepingCapacity: true)
         }
 
         refreshTileMap()
@@ -1066,6 +1116,8 @@ class GameScene: SKScene {
                     if grid[x][y] == .trail { grid[x][y] = .empty }
                 }
             }
+            hostTrailCellIndices.removeAll(keepingCapacity: true)
+            guestTrailCellIndices.removeAll(keepingCapacity: true)
             multiplayerGridRevision += 1
             refreshTileMap()
 
@@ -1165,8 +1217,10 @@ class GameScene: SKScene {
 
     func updateSingleTile(x: Int, y: Int) {
         let type = grid[x][y]
-        if type.rawValue < tileMap.tileSet.tileGroups.count {
-            tileMap.setTileGroup(tileMap.tileSet.tileGroups[type.rawValue], forColumn: x, row: y)
+        let visualType: CellType = type == .trail ? .empty : type
+        if visualType.rawValue < tileMap.tileSet.tileGroups.count {
+            tileMap.setTileGroup(
+                tileMap.tileSet.tileGroups[visualType.rawValue], forColumn: x, row: y)
         }
     }
 }

@@ -12,6 +12,7 @@ final class MultiplayerService: ObservableObject {
     @Published private(set) var roomCode = ""
     @Published private(set) var opponentNickname = ""
     @Published private(set) var remoteDirection: Direction = .none
+    private(set) var remoteDirectionSequence = 0
     // Render döngüsünün okuduğu mailbox. @Published olursa her 50 ms snapshot
     // bütün SwiftUI oyun arayüzünü yeniden hesaplatır ve guest FPS'ini düşürür.
     private(set) var latestSnapshot: MultiplayerGameSnapshot?
@@ -35,6 +36,7 @@ final class MultiplayerService: ObservableObject {
     private var latestLiveGridRevision = -1
     private var latestLiveFilledCells: [Int] = []
     private var latestLiveTrailCells: [Int] = []
+    private var localDirectionSequence = 0
 
     private init() {
         // Bağlantı kopmalarında hızlı toparlanma ve yerel önbellek
@@ -162,17 +164,38 @@ final class MultiplayerService: ObservableObject {
         liveRoomReference = liveRoom
 
         if asHost {
-            liveRoom.child("meta").setValue(["hostID": userID])
+            remoteDirection = .none
+            remoteDirectionSequence = 0
+            liveRoom.setValue([
+                "meta": ["hostID": userID],
+                "input": [
+                    "direction": Direction.none.rawValue,
+                    "sequence": 0,
+                ],
+            ])
             // Host koparsa oda verisi geride kalmasın
             liveRoom.onDisconnectRemoveValue()
 
             // Misafir yön girdisini anında al
-            inputHandle = liveRoom.child("input/direction").observe(.value) { [weak self] data in
+            inputHandle = liveRoom.child("input").observe(.value) { [weak self] data in
                 Task { @MainActor in
-                    guard let self, let raw = data.value as? String,
+                    guard let self else { return }
+                    if let values = data.value as? [String: Any],
+                        let raw = values["direction"] as? String,
                         let direction = Direction(rawValue: raw)
-                    else { return }
-                    self.remoteDirection = direction
+                    {
+                        self.remoteDirection = direction
+                        if let sequence = values["sequence"] as? NSNumber {
+                            self.remoteDirectionSequence = sequence.intValue
+                        } else {
+                            self.remoteDirectionSequence += 1
+                        }
+                    } else if let raw = data.value as? String,
+                        let direction = Direction(rawValue: raw)
+                    {
+                        self.remoteDirection = direction
+                        self.remoteDirectionSequence += 1
+                    }
                 }
             }
         } else {
@@ -199,8 +222,12 @@ final class MultiplayerService: ObservableObject {
 
     func sendDirection(_ direction: Direction) {
         guard isGuest, let liveRoomReference else { return }
+        localDirectionSequence += 1
         // RTDB yazımı yerelde anında yankılanır; ağ gidişini beklemeye gerek yok
-        liveRoomReference.child("input/direction").setValue(direction.rawValue) { _, _ in }
+        liveRoomReference.child("input").setValue([
+            "direction": direction.rawValue,
+            "sequence": localDirectionSequence,
+        ]) { _, _ in }
     }
 
     func publish(
@@ -311,7 +338,7 @@ final class MultiplayerService: ObservableObject {
                 liveRoomReference.child("state/grid").removeObserver(withHandle: gridHandle)
             }
             if let inputHandle {
-                liveRoomReference.child("input/direction").removeObserver(withHandle: inputHandle)
+                liveRoomReference.child("input").removeObserver(withHandle: inputHandle)
             }
             liveRoomReference.cancelDisconnectOperations()
             if removeData {
@@ -399,6 +426,15 @@ final class MultiplayerService: ObservableObject {
         if let rawStatus = values["status"] as? String,
             let roomStatus = MultiplayerRoomStatus(rawValue: rawStatus)
         {
+            if isHost, status == .playing, roomStatus == .waiting {
+                remoteDirection = .none
+                remoteDirectionSequence = 0
+                liveRoomReference?.child("input").setValue(
+                    [
+                        "direction": Direction.none.rawValue,
+                        "sequence": 0,
+                    ])
+            }
             status = roomStatus
         }
 
@@ -452,6 +488,8 @@ final class MultiplayerService: ObservableObject {
         roomCode = ""
         opponentNickname = ""
         remoteDirection = .none
+        remoteDirectionSequence = 0
+        localDirectionSequence = 0
         latestSnapshot = nil
         roomReference = nil
         liveRoomReference = nil

@@ -54,21 +54,27 @@ extension GameScene {
     func moveSecondBug(dt: CGFloat) {
         guard let secondBugNode else { return }
 
-        let requestedDirection = MultiplayerService.shared.remoteDirection
-        if requestedDirection != .none && requestedDirection != secondCurrentDirection
-            && !requestedDirection.isOpposite(of: secondCurrentDirection)
-        {
-            if grid[secondBugGridPos.x][secondBugGridPos.y] == .trail,
-                secondActiveTrailCorners.last != secondBugNode.position
+        let inputSequence = MultiplayerService.shared.remoteDirectionSequence
+        if inputSequence != lastAppliedRemoteInputSequence {
+            lastAppliedRemoteInputSequence = inputSequence
+            let requestedDirection = MultiplayerService.shared.remoteDirection
+            if requestedDirection == .none {
+                secondCurrentDirection = .none
+            } else if requestedDirection != secondCurrentDirection
+                && !requestedDirection.isOpposite(of: secondCurrentDirection)
             {
-                secondActiveTrailCorners.append(secondBugNode.position)
+                if grid[secondBugGridPos.x][secondBugGridPos.y] == .trail,
+                    secondActiveTrailCorners.last != secondBugNode.position
+                {
+                    secondActiveTrailCorners.append(secondBugNode.position)
+                }
+                secondCurrentDirection = requestedDirection
+                secondBugNode.run(
+                    SKAction.rotate(
+                        toAngle: requestedDirection.angle,
+                        duration: 0.05,
+                        shortestUnitArc: true))
             }
-            secondCurrentDirection = requestedDirection
-            secondBugNode.run(
-                SKAction.rotate(
-                    toAngle: requestedDirection.angle,
-                    duration: 0.05,
-                    shortestUnitArc: true))
         }
 
         guard secondCurrentDirection != .none else { return }
@@ -98,20 +104,23 @@ extension GameScene {
         finalPosition.x = max(radius, min(mapWidth - radius, finalPosition.x))
         finalPosition.y = max(radius, min(mapHeight - radius, finalPosition.y))
 
-        if (hitLeft && secondCurrentDirection == .left)
+        let hitMovementBoundary = (hitLeft && secondCurrentDirection == .left)
             || (hitRight && secondCurrentDirection == .right)
             || (hitBottom && secondCurrentDirection == .down)
             || (hitTop && secondCurrentDirection == .up)
-        {
-            secondCurrentDirection = .none
-        }
 
         secondBugNode.position = finalPosition
         let logicX = max(0, min(cols - 1, Int(finalPosition.x / gridSize)))
         let logicY = max(0, min(rows - 1, Int(finalPosition.y / gridSize)))
 
-        if logicX != secondBugGridPos.x || logicY != secondBugGridPos.y {
-            handleSecondBugGridTransition(newX: logicX, newY: logicY)
+        let targetGridPosition = (x: logicX, y: logicY)
+        for cell in traversedGridCells(from: secondBugGridPos, to: targetGridPosition) {
+            handleSecondBugGridTransition(newX: cell.x, newY: cell.y)
+            if currentState != .playing { break }
+        }
+
+        if hitMovementBoundary {
+            secondCurrentDirection = .none
         }
 
         if grid[secondBugGridPos.x][secondBugGridPos.y] == .trail {
@@ -146,7 +155,7 @@ extension GameScene {
             let currentCell = grid[secondBugGridPos.x][secondBugGridPos.y]
             secondBugGridPos = (newX, newY)
             if currentCell == .trail {
-                fillArea()
+                fillArea(closing: .guest)
                 secondActiveTrailPath = CGMutablePath()
                 secondActiveTrailCorners.removeAll(keepingCapacity: true)
                 secondActiveTrailNode?.path = nil
@@ -161,6 +170,7 @@ extension GameScene {
                 secondTrailStartGridPos = secondBugGridPos
             }
             grid[newX][newY] = .trail
+            guestTrailCellIndices.insert(newX * rows + newY)
             multiplayerGridRevision += 1
             secondBugGridPos = (newX, newY)
         }
@@ -179,6 +189,7 @@ extension GameScene {
         secondBugNode.zRotation = 0
         secondBugNode.setScale(1)
         secondCurrentDirection = .none
+        lastAppliedRemoteInputSequence = MultiplayerService.shared.remoteDirectionSequence
         secondActiveTrailPath = CGMutablePath()
         secondActiveTrailCorners.removeAll(keepingCapacity: true)
         secondActiveTrailNode?.path = nil
