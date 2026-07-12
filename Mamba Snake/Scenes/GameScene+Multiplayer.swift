@@ -596,25 +596,50 @@ extension GameScene {
         shouldAdvance: Bool,
         dt: CGFloat
     ) -> CGPoint {
-        let predictedPosition = shouldAdvance
+        let safeAuthoritativeTarget = isOutsideCapturedArea(authoritativeTarget)
+            ? authoritativeTarget : position
+        let advancedPosition = shouldAdvance
             ? clampedToMap(
                 CGPoint(
                     x: position.x + velocity.dx * dt,
                     y: position.y + velocity.dy * dt))
             : position
+        let predictedPosition = isOutsideCapturedArea(advancedPosition)
+            ? advancedPosition : safeAuthoritativeTarget
         let errorDistance = hypot(
-            authoritativeTarget.x - predictedPosition.x,
-            authoritativeTarget.y - predictedPosition.y)
+            safeAuthoritativeTarget.x - predictedPosition.x,
+            safeAuthoritativeTarget.y - predictedPosition.y)
 
         if errorDistance > gridSize * 6 {
-            return authoritativeTarget
+            return safeAuthoritativeTarget
         }
         guard errorDistance > gridSize * 1.5 else { return predictedPosition }
 
-        return interpolated(
+        let correctedPosition = interpolated(
             from: predictedPosition,
-            to: authoritativeTarget,
+            to: safeAuthoritativeTarget,
             amount: min(1, dt * 24))
+        return isOutsideCapturedArea(correctedPosition)
+            ? correctedPosition : predictedPosition
+    }
+
+    private func isOutsideCapturedArea(_ position: CGPoint) -> Bool {
+        guard gridSize > 0 else { return false }
+        let radius = max(0, gridSize / 2 - 2)
+        let checkPoints = [
+            position,
+            CGPoint(x: position.x + radius, y: position.y),
+            CGPoint(x: position.x - radius, y: position.y),
+            CGPoint(x: position.x, y: position.y + radius),
+            CGPoint(x: position.x, y: position.y - radius),
+        ]
+
+        return checkPoints.allSatisfy { point in
+            let x = Int(point.x / gridSize)
+            let y = Int(point.y / gridSize)
+            guard x >= 0, x < cols, y >= 0, y < rows else { return false }
+            return grid[x][y] != .filled && grid[x][y] != .border
+        }
     }
 
     private func updateRemoteSnakeRotations() {

@@ -733,6 +733,18 @@ class GameScene: SKScene {
     }
 
     func moveSnake(dt: CGFloat) {
+        let movementDistance = hypot(snakeVelocity.dx, snakeVelocity.dy) * dt
+        let maxStepDistance = max(1, gridSize * 0.35)
+        if movementDistance > maxStepDistance {
+            let stepCount = Int(ceil(movementDistance / maxStepDistance))
+            let stepDuration = dt / CGFloat(stepCount)
+            for _ in 0..<stepCount {
+                moveSnake(dt: stepDuration)
+                if currentState != .playing || isEating { return }
+            }
+            return
+        }
+
         // Random Turn Logic
         timeSinceLastSnakeTurn += TimeInterval(dt)
         if timeSinceLastSnakeTurn >= nextSnakeTurnTime {
@@ -939,9 +951,40 @@ class GameScene: SKScene {
         }
     }
 
+    private func activeSnakePathPoints() -> [CGPoint] {
+        var points = [snakePosition] + snakeBody.map(\.position)
+        guard snakeBody.count > 0, snakeHistory.count > 1 else { return points }
+
+        let occupiedDistance = snakeSegmentSpacing * CGFloat(snakeBody.count)
+        var traversedDistance: CGFloat = 0
+        points.append(snakeHistory[0])
+
+        for index in 0..<(snakeHistory.count - 1) {
+            let start = snakeHistory[index]
+            let end = snakeHistory[index + 1]
+            let dx = end.x - start.x
+            let dy = end.y - start.y
+            let segmentDistance = hypot(dx, dy)
+            guard segmentDistance > 0.001 else { continue }
+
+            if traversedDistance + segmentDistance <= occupiedDistance {
+                points.append(end)
+                traversedDistance += segmentDistance
+                continue
+            }
+
+            let remainingDistance = max(0, occupiedDistance - traversedDistance)
+            let amount = remainingDistance / segmentDistance
+            points.append(
+                CGPoint(
+                    x: start.x + dx * amount,
+                    y: start.y + dy * amount))
+            break
+        }
+        return points
+    }
+
     func fillArea(closing owner: TrailOwner) {
-        let snakeGridX = Int(snakePosition.x / gridSize)
-        let snakeGridY = Int(snakePosition.y / gridSize)
         let closingTrailCells = owner == .host
             ? hostTrailCellIndices : guestTrailCellIndices
         let otherTrailCells = owner == .host
@@ -956,39 +999,28 @@ class GameScene: SKScene {
             grid[x][y] == .empty || otherTrailCells.contains(x * rows + y)
         }
 
-        // Robust Start: Search for an empty cell around the snake
-        // The snake might be slightly overlapping a border/trail visually,
-        // but it must be centered in or near an empty valid play area.
-        let searchRadius = 2
-        var foundStart = false
-
-        let centerX = max(0, min(cols - 1, snakeGridX))
-        let centerY = max(0, min(rows - 1, snakeGridY))
-
-        // Spiral search or simple nested loop for start point
-        searchLoop: for r in 0...searchRadius {
-            for dx in -r...r {
-                for dy in -r...r {
-                    let nx = centerX + dx
-                    let ny = centerY + dy
-
-                    if nx >= 0 && nx < cols && ny >= 0 && ny < rows {
-                        if isFloodReachable(x: nx, y: ny) {
-                            queue.append((nx, ny))
-                            visited[nx][ny] = true
-                            foundStart = true
-                            break searchLoop
-                        }
-                    }
-                }
+        // Only seed cells actually occupied from the head through the final
+        // body segment. Older history points are behind the visible snake.
+        var snakeSeedCells = Set<Int>()
+        for point in activeSnakePathPoints() {
+            let x = max(0, min(cols - 1, Int(point.x / gridSize)))
+            let y = max(0, min(rows - 1, Int(point.y / gridSize)))
+            let index = x * rows + y
+            if isFloodReachable(x: x, y: y) {
+                snakeSeedCells.insert(index)
             }
         }
 
-        if !foundStart {
-            // Fallback: If snake is somehow completely entombed (should be impossible if alive),
-            // do not fill anything to avoid destroying the game state.
-            print("Critical: Snake Logic Error - No empty space found around snake.")
+        if snakeSeedCells.isEmpty {
+            print("Critical: No reachable area found around the snake.")
             return
+        }
+
+        for index in snakeSeedCells {
+            let x = index / rows
+            let y = index % rows
+            queue.append((x, y))
+            visited[x][y] = true
         }
 
         var queueIndex = 0
