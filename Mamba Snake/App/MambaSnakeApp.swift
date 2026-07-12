@@ -2,15 +2,27 @@ import SwiftUI
 
 @main
 struct MambaSnakeApp: App {
+    @ObservedObject private var featureService = FirebaseFeatureService.shared
+
+    init() {
+        FirebaseService.configure()
+        FirebaseTelemetryService.shared.configure()
+        FirebaseFeatureService.shared.start()
+    }
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .ignoresSafeArea()
-                .statusBar(hidden: true)
-                .onAppear {
-                    // Request IDFA tracking permission
-                    AdMobService.shared.requestTracking()
-                }
+            if featureService.forceUpdateRequired {
+                ForceUpdateView()
+            } else {
+                ContentView()
+                    .ignoresSafeArea()
+                    .statusBar(hidden: true)
+                    .onAppear {
+                        FirebaseTelemetryService.shared.logAppReady()
+                        AdMobService.shared.requestTracking()
+                    }
+            }
         }
     }
 }

@@ -1,0 +1,163 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validNickname(nickname) {
+      return nickname is string
+        && nickname.size() >= 1
+        && nickname.size() <= 24;
+    }
+
+    match /scores/{userID} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.auth.uid == userID
+        && request.resource.data.ownerID == userID
+        && validNickname(request.resource.data.nickname)
+        && request.resource.data.score is int
+        && request.resource.data.score >= 0
+        && request.resource.data.level is int
+        && request.resource.data.level >= 1
+        && request.resource.data.keys().hasAll([
+          'nickname', 'nicknameNormalized', 'ownerID', 'score', 'level',
+          'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'nickname', 'nicknameNormalized', 'ownerID', 'score', 'level',
+          'createdAt', 'updatedAt'
+        ]);
+
+      allow update: if signedIn()
+        && request.auth.uid == userID
+        && request.resource.data.ownerID == resource.data.ownerID
+        && request.resource.data.ownerID == userID
+        && validNickname(request.resource.data.nickname)
+        && request.resource.data.score is int
+        && request.resource.data.score >= resource.data.score
+        && request.resource.data.level is int
+        && request.resource.data.level >= 1
+        && request.resource.data.keys().hasOnly([
+          'nickname', 'nicknameNormalized', 'ownerID', 'score', 'level',
+          'createdAt', 'updatedAt'
+        ]);
+
+      allow delete: if signedIn() && request.auth.uid == userID;
+    }
+
+    match /multiplayerScores/{roomCode} {
+      function sourceRoom() {
+        return get(/databases/$(database)/documents/rooms/$(roomCode)).data;
+      }
+
+      function validTeamScore() {
+        let room = sourceRoom();
+        return room.hostID == request.auth.uid
+          && room.guestID is string
+          && request.resource.data.ownerID == room.hostID
+          && request.resource.data.hostID == room.hostID
+          && request.resource.data.guestID == room.guestID
+          && request.resource.data.hostNickname == room.hostNickname
+          && request.resource.data.guestNickname == room.guestNickname
+          && validNickname(request.resource.data.hostNickname)
+          && validNickname(request.resource.data.guestNickname)
+          && request.resource.data.playerIDs is list
+          && request.resource.data.playerIDs.size() == 2
+          && request.resource.data.playerIDs[0] == room.hostID
+          && request.resource.data.playerIDs[1] == room.guestID
+          && request.resource.data.score is int
+          && request.resource.data.score >= 0
+          && request.resource.data.level is int
+          && request.resource.data.level >= 1;
+      }
+
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && roomCode.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && validTeamScore()
+        && request.resource.data.keys().hasAll([
+          'ownerID', 'hostID', 'guestID', 'playerIDs', 'hostNickname',
+          'guestNickname', 'score', 'level', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'ownerID', 'hostID', 'guestID', 'playerIDs', 'hostNickname',
+          'guestNickname', 'score', 'level', 'createdAt', 'updatedAt'
+        ]);
+
+      allow update: if signedIn()
+        && validTeamScore()
+        && request.resource.data.ownerID == resource.data.ownerID
+        && request.resource.data.hostID == resource.data.hostID
+        && request.resource.data.guestID == resource.data.guestID
+        && request.resource.data.playerIDs == resource.data.playerIDs
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.score >= resource.data.score
+        && request.resource.data.keys().hasOnly([
+          'ownerID', 'hostID', 'guestID', 'playerIDs', 'hostNickname',
+          'guestNickname', 'score', 'level', 'createdAt', 'updatedAt'
+        ]);
+
+      allow delete: if signedIn() && request.auth.uid == resource.data.ownerID;
+    }
+
+    match /rooms/{roomCode} {
+      function changedOnly(fields) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+      }
+
+      function guestIsJoining() {
+        return resource.data.status == 'waiting'
+          && !('guestID' in resource.data)
+          && request.resource.data.guestID == request.auth.uid
+          && validNickname(request.resource.data.guestNickname)
+          && request.resource.data.status == 'playing'
+          && changedOnly([
+            'guestID', 'guestNickname', 'guestDirection', 'status', 'updatedAt'
+          ]);
+      }
+
+      function guestIsSendingDirection() {
+        return resource.data.guestID == request.auth.uid
+          && request.resource.data.guestID == request.auth.uid
+          && changedOnly(['guestDirection', 'guestUpdatedAt']);
+      }
+
+      function guestIsLeaving() {
+        return resource.data.guestID == request.auth.uid
+          && !('guestID' in request.resource.data)
+          && !('guestNickname' in request.resource.data)
+          && request.resource.data.status == 'waiting'
+          && changedOnly([
+            'guestID', 'guestNickname', 'guestDirection', 'status', 'updatedAt'
+          ]);
+      }
+
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && roomCode.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && request.resource.data.hostID == request.auth.uid
+        && validNickname(request.resource.data.hostNickname)
+        && request.resource.data.status == 'waiting'
+        && request.resource.data.keys().hasOnly([
+          'hostID', 'hostNickname', 'hostDirection', 'guestDirection',
+          'status', 'createdAt', 'updatedAt'
+        ]);
+
+      allow update: if signedIn() && (
+        resource.data.hostID == request.auth.uid
+        || guestIsJoining()
+        || guestIsSendingDirection()
+        || guestIsLeaving()
+      );
+
+      allow delete: if signedIn() && resource.data.hostID == request.auth.uid;
+    }
+  }
+}

@@ -14,6 +14,10 @@ import SpriteKit
     import AppKit
 #endif
 
+private enum GIFTextureStore {
+    static var texturesByName: [String: [SKTexture]] = [:]
+}
+
 extension SKSpriteNode {
 
     /// GIF dosyasından animasyon oluşturur ve node'a uygular
@@ -42,6 +46,10 @@ extension SKSpriteNode {
 
     /// GIF dosyasını texture array'e çevirir
     private static func loadGIFTextures(named name: String) -> [SKTexture]? {
+        if let cachedTextures = GIFTextureStore.texturesByName[name] {
+            return cachedTextures
+        }
+
         guard let path = Bundle.main.path(forResource: name, ofType: "gif") else {
             print("❌ GIF dosyası bulunamadı: \(name).gif")
             return nil
@@ -52,7 +60,9 @@ extension SKSpriteNode {
             return nil
         }
 
-        return extractFrames(from: data)
+        guard let textures = extractFrames(from: data) else { return nil }
+        GIFTextureStore.texturesByName[name] = textures
+        return textures
     }
 
     /// GIF data'sından frame'leri çıkarır

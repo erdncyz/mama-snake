@@ -1,0 +1,18 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomCode": {
+        ".read": "auth != null && $roomCode.matches(/^[A-HJ-NP-Z2-9]{6}$/)",
+        ".write": "auth != null && ((!data.exists() && newData.child('meta/hostID').val() === auth.uid) || data.child('meta/hostID').val() === auth.uid)",
+        "input": {
+          ".write": "auth != null && root.child('rooms').child($roomCode).child('meta/guestID').val() === auth.uid"
+        },
+        "meta": {
+          "guestID": {
+            ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()))"
+          }
+        }
+      }
+    }
+  }
+}

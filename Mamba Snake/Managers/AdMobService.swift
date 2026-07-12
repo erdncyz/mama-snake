@@ -82,6 +82,8 @@ class AdMobService: NSObject {
                 if let error = error {
                     print(
                         "Failed to load interstitial ad with error: \(error.localizedDescription)")
+                    FirebaseTelemetryService.shared.record(
+                        error, operation: "admob_interstitial_load")
                     return
                 }
                 self?.interstitial = ad
@@ -120,6 +122,8 @@ class AdMobService: NSObject {
             RewardedAd.load(with: rewardedUnitID, request: request) { [weak self] ad, error in
                 if let error = error {
                     print("Failed to load rewarded ad with error: \(error.localizedDescription)")
+                    FirebaseTelemetryService.shared.record(
+                        error, operation: "admob_rewarded_load")
                     return
                 }
                 self?.rewardedAd = ad

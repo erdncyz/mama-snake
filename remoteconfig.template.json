@@ -1,0 +1,54 @@
+{
+  "parameters": {
+    "force_update_required": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "True ise tüm kullanıcıları App Store güncellemesine zorlar.",
+      "valueType": "BOOLEAN"
+    },
+    "force_update_min_version": {
+      "defaultValue": {
+        "value": "0.0"
+      },
+      "description": "Bu sürümün altındaki istemcileri güncellemeye zorlar (örn. 1.3).",
+      "valueType": "STRING"
+    },
+    "multiplayer_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "description": "Controls access to online co-op without an app release.",
+      "valueType": "BOOLEAN"
+    },
+    "leaderboard_limit": {
+      "defaultValue": {
+        "value": "10"
+      },
+      "description": "Number of rows shown on solo and co-op leaderboards.",
+      "valueType": "NUMBER"
+    },
+    "multiplayer_snapshot_interval_ms": {
+      "defaultValue": {
+        "value": "50"
+      },
+      "description": "Minimum delay between multiplayer snapshots in milliseconds.",
+      "valueType": "NUMBER"
+    },
+    "interstitial_ads_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "description": "Controls solo interstitial ads.",
+      "valueType": "BOOLEAN"
+    },
+    "rewarded_ads_enabled": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "description": "Controls rewarded continue ads.",
+      "valueType": "BOOLEAN"
+    }
+  },
+  "parameterGroups": {}
+}

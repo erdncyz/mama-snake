@@ -269,9 +269,8 @@ extension GameScene {
         guard let emitter = bugTrailEmitter else { return }
 
         if isActive {
-            // Trail modunda parıltı + ağ
+            // Trail modunda yalnız hafif parıltı kullanılır.
             emitter.particleBirthRate = 5
-            updateBugWebTrail()
         } else {
             // Safe zone'da dur
             emitter.particleBirthRate = 0

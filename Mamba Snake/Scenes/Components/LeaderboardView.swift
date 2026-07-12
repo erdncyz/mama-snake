@@ -6,17 +6,27 @@ import SwiftUI
 
 struct LeaderboardView: View {
     @ObservedObject var gameManager = GameManager.shared
-    @StateObject private var supabaseService = SupabaseService.shared
+    @StateObject private var firebaseService = FirebaseService.shared
+    @ObservedObject private var featureService = FirebaseFeatureService.shared
 
     @State private var topScores: [ScoreEntry] = []
     @State private var userBest: ScoreEntry?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var category: LeaderboardCategory
 
     @Binding var isPresented: Bool
 
     // Local nickname state for input
     @State private var tempNickname: String = ""
+
+    init(
+        isPresented: Binding<Bool>,
+        initialCategory: LeaderboardCategory = .solo
+    ) {
+        _isPresented = isPresented
+        _category = State(initialValue: initialCategory)
+    }
 
     var body: some View {
         ZStack {
@@ -40,10 +50,18 @@ struct LeaderboardView: View {
                         .foregroundColor(.green)
                         .tracking(2)
 
-                    Text("LEADERBOARD")
+                    Text(category == .solo ? "LEADERBOARD" : "TEAM LEADERBOARD")
                         .font(.system(size: 32, weight: .heavy, design: .rounded))
                         .foregroundColor(.yellow)
                         .shadow(color: .orange, radius: 10)
+
+                    Picker("Leaderboard", selection: $category) {
+                        ForEach(LeaderboardCategory.allCases) { category in
+                            Text(category.title).tag(category)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.top, 10)
                 }
 
                 if gameManager.nickname.isEmpty {
@@ -66,6 +84,11 @@ struct LeaderboardView: View {
             .padding(20)
         }
         .onAppear {
+            if !gameManager.nickname.isEmpty {
+                loadScores()
+            }
+        }
+        .onChange(of: category) { _, _ in
             if !gameManager.nickname.isEmpty {
                 loadScores()
             }
@@ -124,7 +147,11 @@ struct LeaderboardView: View {
                 // Top 5
                 VStack(spacing: 10) {
                     HStack {
-                        Text("Top 10 Players")
+                        Text(
+                            category == .solo
+                                ? "Top \(featureService.leaderboardLimit) Players"
+                                : "Top \(featureService.leaderboardLimit) Teams"
+                        )
                             .font(.headline)
                             .foregroundColor(.white)
                         Spacer()
@@ -145,7 +172,7 @@ struct LeaderboardView: View {
 
                 // User Best
                 VStack(spacing: 5) {
-                    Text("Your Best")
+                    Text(category == .solo ? "Your Best" : "Your Best Team")
                         .font(.caption)
                         .foregroundColor(.gray)
 
@@ -215,10 +242,19 @@ struct LeaderboardView: View {
                     .frame(width: 30, alignment: .leading)
             }
 
-            Text(entry.nickname)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.nickname)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+
+                if let teammateNickname = entry.teammateNickname {
+                    Text("+ \(teammateNickname)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.orange)
+                        .lineLimit(1)
+                }
+            }
 
             Spacer()
 
@@ -239,21 +275,31 @@ struct LeaderboardView: View {
     func loadScores() {
         isLoading = true
         errorMessage = nil
+        let requestedCategory = category
+        let limit = featureService.leaderboardLimit
 
         Task {
             do {
-                async let top = supabaseService.fetchTopScores()
-                async let user = supabaseService.fetchUserBest(nickname: gameManager.nickname)
+                async let top = firebaseService.fetchTopScores(
+                    category: requestedCategory, limit: limit)
+                async let user = firebaseService.fetchUserBest(
+                    category: requestedCategory, nickname: gameManager.nickname)
 
                 let (fetchedTop, fetchedUser) = try await (top, user)
 
                 await MainActor.run {
+                    guard self.category == requestedCategory else { return }
                     self.topScores = fetchedTop
                     self.userBest = fetchedUser
                     self.isLoading = false
+                    FirebaseTelemetryService.shared.logLeaderboardViewed(
+                        category: requestedCategory)
                 }
             } catch {
                 await MainActor.run {
+                    guard self.category == requestedCategory else { return }
+                    FirebaseTelemetryService.shared.record(
+                        error, operation: "leaderboard_fetch_\(requestedCategory.rawValue)")
                     self.errorMessage = error.localizedDescription
                     self.isLoading = false
                 }

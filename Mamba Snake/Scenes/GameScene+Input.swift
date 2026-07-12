@@ -15,6 +15,15 @@ extension GameScene {
     func handleInput(direction: Direction) {
         guard currentState == .playing else { return }
 
+        if GameManager.shared.isMultiplayer && MultiplayerService.shared.isGuest {
+            // Anında görsel tepki: yerel tahmin uygula, sonra host'a gönder
+            applyLocalGuestPrediction(direction)
+            Task {
+                await MultiplayerService.shared.sendDirection(direction)
+            }
+            return
+        }
+
         switch direction {
         case .up:
             if currentDirection != .down { nextDirection = .up }

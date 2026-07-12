@@ -8,7 +8,7 @@ enum CellType: Int {
     case border = 3
 }
 
-enum Direction {
+enum Direction: String {
     case none, up, down, left, right
 
     var angle: CGFloat {
@@ -22,6 +22,6 @@ enum Direction {
     }
 }
 
-enum GameState {
+enum GameState: String {
     case ready, playing, paused, gameOver, levelComplete
 }
