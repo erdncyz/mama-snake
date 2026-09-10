@@ -90,42 +90,12 @@ class GameScene: SKScene {
         trailShape.strokeColor = .clear
         trailTexture = view?.texture(from: trailShape) ?? SKTexture()
 
-        // Border Cell
-        // Border Cell - Garden Fence Design
-        let fenceContainer = SKShapeNode(rectOf: size)
-        fenceContainer.fillColor = .clear
-        fenceContainer.strokeColor = .clear
-
-        // Draw Fence Plank
-        let plankPath = CGMutablePath()
-        // Bottom part
-        plankPath.move(to: CGPoint(x: -size.width / 2 + 2, y: -size.height / 2))
-        plankPath.addLine(to: CGPoint(x: size.width / 2 - 2, y: -size.height / 2))
-        // Sides
-        plankPath.addLine(to: CGPoint(x: size.width / 2 - 2, y: size.height / 2 - 6))
-        // Pointed Top
-        plankPath.addLine(to: CGPoint(x: 0, y: size.height / 2))
-        plankPath.addLine(to: CGPoint(x: -size.width / 2 + 2, y: size.height / 2 - 6))
-        plankPath.closeSubpath()
-
-        let fenceNode = SKShapeNode(path: plankPath)
-        fenceNode.fillColor = SKColor(red: 0.55, green: 0.35, blue: 0.15, alpha: 1.0)  // Wood Brown
-        fenceNode.strokeColor = SKColor(red: 0.35, green: 0.20, blue: 0.05, alpha: 1.0)  // Darker Brown Stroke
-        fenceNode.lineWidth = 1.5
-
-        // Wood grain details
-        let detailPath = CGMutablePath()
-        detailPath.move(to: CGPoint(x: 0, y: -size.height / 2 + 4))
-        detailPath.addLine(to: CGPoint(x: 0, y: size.height / 2 - 10))
-
-        let detailNode = SKShapeNode(path: detailPath)
-        detailNode.strokeColor = SKColor(red: 0.45, green: 0.25, blue: 0.10, alpha: 0.5)
-        detailNode.lineWidth = 1
-
-        fenceContainer.addChild(fenceNode)
-        fenceContainer.addChild(detailNode)
-
-        borderTexture = view?.texture(from: fenceContainer) ?? SKTexture()
+        // A quiet, high-contrast boundary works with every arena palette.
+        let border = SKShapeNode(rectOf: size, cornerRadius: 3)
+        border.fillColor = SKColor(red: 0.65, green: 0.96, blue: 0.55, alpha: 0.18)
+        border.strokeColor = SKColor(red: 0.65, green: 0.96, blue: 0.55, alpha: 0.45)
+        border.lineWidth = 1
+        borderTexture = view?.texture(from: border) ?? SKTexture()
     }
 
     func updateLabels() {
@@ -141,7 +111,7 @@ class GameScene: SKScene {
     override func didMove(to view: SKView) {
         // Koordinat sistemi sol alt (0,0) olsun
         self.anchorPoint = CGPoint(x: 0, y: 0)
-        view.preferredFramesPerSecond = 120
+        view.preferredFramesPerSecond = 60
         view.ignoresSiblingOrder = true
         view.shouldCullNonVisibleNodes = true
         view.isAsynchronous = true
@@ -167,36 +137,9 @@ class GameScene: SKScene {
 
         removeAllChildren()
 
-        // Set Background Image
-        let bgNode = SKSpriteNode(imageNamed: "Background")
-        // Anchor (0,0) olduğu için arka planı ekranın ortasına taşıyoruz
-        bgNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        bgNode.zPosition = -100
+        // SwiftUI renders the selected arena beneath the transparent scene.
+        backgroundColor = .clear
 
-        // Scale to fit
-        let ratio = max(self.size.width / bgNode.size.width, self.size.height / bgNode.size.height)
-        bgNode.setScale(ratio)
-        addChild(bgNode)
-
-        // TileMap anchor point ayarı (önemli!)
-        // TileMap varsayılan olarak (0.5, 0.5). Koordinat sistemimiz (0,0) olduğu için
-        // TileMap'in de sol alttan başlamasını istiyorsak pozisyonunu ayarlamalıyız.
-        // Veya TileMap'i logic olarak kullanıp visual olarak hücreleri tek tek ekliyorsak (ki öyle yapıyoruz: sprite node'lar yok, texture'lar tilemap içinde değil)
-
-        // Kodu inceledim: tileMap = SKTileMapNode(...) oluşturuluyor ama grid logic array olarak kullanılıyor.
-        // tileMap sadece snakeBody vs için parent.
-        // Ama 150-158 satırlarında grid array'i dolduruluyor.
-        // Görsel olarak borderlar nasıl çiziliyor?
-        // startLevel içinde 'setupTextures' ile texturelar oluşturuluyor ama border node'larını ekleyen bir döngü GÖREMİYORUM.
-
-        // AŞAĞIDA: createLevelObjects() veya benzeri bir yerde border node'ları eklenmeli.
-        // Kodun devamında 'drawBorder()' gibi bir şey var mı?
-        // Hayır, startLevel'ın sonunda bir döngü olmalı.
-
-        // Oraya da bakıp düzeltmem gerekebilir ama önce Anchor Point'i düzeltem.
-
-        // Calculate Visible Area based on ACTUAL scene size
-        // Use the smaller of view size or scene size to be safe
         let availableWidth = size.width
         let availableHeight = size.height
 
@@ -280,6 +223,7 @@ class GameScene: SKScene {
         let bugX = CGFloat(bugGridPos.x) * gridSize + gridSize / 2
         let bugY = CGFloat(bugGridPos.y) * gridSize + gridSize / 2
         bugNode.position = CGPoint(x: bugX, y: bugY)
+        bugNode = makeActorCarrier(bugNode)
         tileMap.addChild(bugNode)
 
         // Ağ efekti setup
@@ -367,10 +311,11 @@ class GameScene: SKScene {
 
         // Create Body Segments
         for _ in 0..<snakeBodyCount {
-            let seg = SKSpriteNode(imageNamed: "SnakeBody")
+            var seg = SKSpriteNode(imageNamed: "SnakeBody")
             seg.size = CGSize(width: gridSize * 2.5, height: gridSize * 2.5)  // Grid küçüldüğü için büyüttük
             seg.zPosition = 8
             seg.position = snakePosition
+            seg = makeActorCarrier(seg)
             tileMap.addChild(seg)
             snakeBody.append(seg)
         }
@@ -391,12 +336,17 @@ class GameScene: SKScene {
         snakeVelocity = CGVector(
             dx: cos(randomStartAngle) * currentLevelSpeed,
             dy: sin(randomStartAngle) * currentLevelSpeed)
+        snakeNode = makeActorCarrier(snakeNode)
         tileMap.addChild(snakeNode)
 
         snakeHistory.append(snakePosition)
     }
 
     // MARK: - Game Loop & Logic
+
+    override func didFinishUpdate() {
+        updateActorPresentation()
+    }
 
     override func update(_ currentTime: TimeInterval) {
         // Sync Helper: If manager says playing but we are ready, start!
@@ -1085,10 +1035,11 @@ class GameScene: SKScene {
     func togglePause() {
         if currentState == .playing {
             currentState = .paused
-            DispatchQueue.main.async { GameManager.shared.isPaused = true }
+            GameManager.shared.isPaused = true
         } else if currentState == .paused {
             currentState = .playing
-            DispatchQueue.main.async { GameManager.shared.isPaused = false }
+            GameManager.shared.isPaused = false
+            lastUpdateTime = 0
         }
     }
 

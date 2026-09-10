@@ -20,7 +20,7 @@ class AdMobService: NSObject {
     // Test IDs
     // Replace these with your actual Ad Unit IDs from AdMob console before release
     #if DEBUG
-        let bannerUnitID = "ca-app-pub-3940256099942544/2934735716"  // Test Banner
+        let bannerUnitID = "ca-app-pub-3940256099942544/2435281174"  // Anchored adaptive test banner
         let interstitialUnitID = "ca-app-pub-3940256099942544/4411468910"  // Test Interstitial
         let rewardedUnitID = "ca-app-pub-3940256099942544/1712485313"  // Test Rewarded
     #else
@@ -161,22 +161,52 @@ class AdMobService: NSObject {
 
 // MARK: - Banner View
 struct AdMobBanner: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIViewController {
-        let view = UIViewController()
+    let width: CGFloat
 
+    static func height(for width: CGFloat) -> CGFloat {
         #if canImport(GoogleMobileAds)
-            let windowWidth = UIScreen.main.bounds.width
-            let adaptiveSize = currentOrientationAnchoredAdaptiveBanner(width: windowWidth)
-            let banner = BannerView(adSize: adaptiveSize)
-            banner.adUnitID = AdMobService.shared.bannerUnitID
-            banner.rootViewController = view
-            view.view.addSubview(banner)
-            view.view.frame = CGRect(origin: .zero, size: adaptiveSize.size)
-            banner.load(Request())
+            return currentOrientationAnchoredAdaptiveBanner(width: max(1, width)).size.height
+        #else
+            return 50
         #endif
-
-        return view
     }
 
-    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
+    final class Coordinator {
+        #if canImport(GoogleMobileAds)
+            var banner: BannerView?
+            var loadedSize: CGSize = .zero
+        #endif
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let controller = UIViewController()
+        controller.view.backgroundColor = .clear
+        #if canImport(GoogleMobileAds)
+            let banner = BannerView(adSize: currentOrientationAnchoredAdaptiveBanner(width: max(1, width)))
+            banner.backgroundColor = .clear
+            banner.adUnitID = AdMobService.shared.bannerUnitID
+            banner.rootViewController = controller
+            banner.translatesAutoresizingMaskIntoConstraints = false
+            controller.view.addSubview(banner)
+            NSLayoutConstraint.activate([
+                banner.centerXAnchor.constraint(equalTo: controller.view.centerXAnchor),
+                banner.centerYAnchor.constraint(equalTo: controller.view.centerYAnchor),
+            ])
+            context.coordinator.banner = banner
+        #endif
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {
+        #if canImport(GoogleMobileAds)
+            let adSize = currentOrientationAnchoredAdaptiveBanner(width: max(1, width))
+            guard let banner = context.coordinator.banner,
+                context.coordinator.loadedSize != adSize.size else { return }
+            context.coordinator.loadedSize = adSize.size
+            banner.adSize = adSize
+            banner.load(Request())
+        #endif
+    }
 }

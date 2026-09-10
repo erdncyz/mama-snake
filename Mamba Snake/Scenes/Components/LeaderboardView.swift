@@ -21,29 +21,31 @@ struct LeaderboardView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.85).edgesIgnoringSafeArea(.all)
+            ArenaBackground(theme: .midnight).ignoresSafeArea()
 
-            VStack(spacing: 20) {
+            ScrollView {
+              VStack(spacing: 20) {
                 HStack {
                     Spacer()
                     Button(action: { isPresented = false }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title)
                             .foregroundColor(.white)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
+                    .accessibilityLabel("Liderlik tablosunu kapat")
                 }
                 .padding(.horizontal)
 
                 VStack(spacing: 5) {
                     Text("MAMBA SNAKE")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundColor(.green)
+                        .foregroundColor(MambaStyle.mint)
                         .tracking(2)
 
-                    Text("LEADERBOARD")
-                        .font(.system(size: 32, weight: .heavy, design: .rounded))
-                        .foregroundColor(.yellow)
-                        .shadow(color: .orange, radius: 10)
+                    Text("Liderlik tablosu")
+                        .font(.system(.largeTitle, design: .rounded).bold())
+                        .foregroundColor(MambaStyle.mint)
                 }
 
                 if gameManager.nickname.isEmpty {
@@ -55,13 +57,16 @@ struct LeaderboardView: View {
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 25)
-                    .fill(Color(red: 0.1, green: 0.12, blue: 0.18))
+                    .fill(MambaStyle.surface)
                     .overlay(
                         RoundedRectangle(cornerRadius: 25)
-                            .stroke(Color.yellow.opacity(0.5), lineWidth: 2)
+                            .stroke(Color.white.opacity(0.09), lineWidth: 1)
                     )
             )
             .padding(20)
+            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity)
+            }
         }
         .onAppear {
             if !gameManager.nickname.isEmpty {
@@ -72,11 +77,11 @@ struct LeaderboardView: View {
 
     var nicknameInputView: some View {
         VStack(spacing: 15) {
-            Text("Enter your nickname to see the leaderboard")
+            Text("Sıralamayı görmek için oyuncu adını gir")
                 .foregroundColor(.gray)
                 .font(.subheadline)
 
-            TextField("Nickname", text: $tempNickname)
+            TextField("Oyuncu adı", text: $tempNickname)
                 .padding()
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(10)
@@ -93,11 +98,11 @@ struct LeaderboardView: View {
                 gameManager.submitScore()
                 loadScores()
             }) {
-                Text("SAVE & VIEW")
+                Text("Kaydet ve göster")
                     .fontWeight(.bold)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.green)
+                    .background(MambaStyle.mint)
                     .foregroundColor(.white)
                     .cornerRadius(10)
             }
@@ -111,36 +116,37 @@ struct LeaderboardView: View {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
             } else if let error = errorMessage {
-                Text("Error: \(error)")
+                Text("Yüklenemedi: \(error)")
                     .foregroundColor(.red)
                     .font(.caption)
-                Button("Retry") {
+                Button("Tekrar dene") {
                     loadScores()
                 }
             } else {
                 VStack(spacing: 10) {
                     HStack {
-                        Text("Top \(leaderboardLimit) Players")
+                        Text("En iyi \(leaderboardLimit) oyuncu")
                             .font(.headline)
                             .foregroundColor(.white)
                         Spacer()
                     }
 
-                    ScrollView {
-                        LazyVStack(spacing: 8) {
-                            ForEach(Array(topScores.enumerated()), id: \.offset) {
-                                index, entry in
-                                scoreRow(rank: index + 1, entry: entry)
-                            }
+                    if topScores.isEmpty {
+                        Text("İlk rekoru sen yaz. Oyna ve sıralamada yerini al.")
+                            .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 20)
+                    }
+                    LazyVStack(spacing: 8) {
+                        ForEach(Array(topScores.enumerated()), id: \.offset) {
+                            index, entry in
+                            scoreRow(rank: index + 1, entry: entry)
                         }
                     }
-                    .frame(maxHeight: 200)
                 }
 
                 Divider().background(Color.gray)
 
                 VStack(spacing: 5) {
-                    Text("Your Best")
+                    Text("Senin rekorun")
                         .font(.caption)
                         .foregroundColor(.gray)
 
@@ -149,7 +155,7 @@ struct LeaderboardView: View {
                             .background(Color.green.opacity(0.2))
                             .cornerRadius(8)
                     } else {
-                        Text("No records yet")
+                        Text("Henüz bir rekor yok")
                             .foregroundColor(.white.opacity(0.6))
                             .font(.subheadline)
                     }
@@ -160,13 +166,13 @@ struct LeaderboardView: View {
                 }) {
                     HStack {
                         Image(systemName: "square.and.arrow.up")
-                        Text("SHARE")
+                        Text("Paylaş")
                     }
                     .font(.headline)
                     .foregroundColor(.black)
                     .padding(.vertical, 10)
                     .padding(.horizontal, 25)
-                    .background(Color.yellow)
+                    .background(MambaStyle.mint)
                     .cornerRadius(20)
                 }
                 .padding(.top, 10)
@@ -193,6 +199,11 @@ struct LeaderboardView: View {
             while let presentedVC = topVC.presentedViewController {
                 topVC = presentedVC
             }
+            if let popover = activityVC.popoverPresentationController {
+                popover.sourceView = topVC.view
+                popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 1, height: 1)
+                popover.permittedArrowDirections = []
+            }
             topVC.present(activityVC, animated: true, completion: nil)
         }
     }
@@ -202,7 +213,7 @@ struct LeaderboardView: View {
             if let rank = rank {
                 Text("#\(rank)")
                     .font(.system(size: 16, weight: .bold, design: .monospaced))
-                    .foregroundColor(rank == 1 ? .yellow : .white)
+                    .foregroundColor(rank == 1 ? MambaStyle.mint : .white)
                     .frame(width: 30, alignment: .leading)
             }
 
@@ -217,7 +228,7 @@ struct LeaderboardView: View {
                 Text("\(entry.score)")
                     .font(.system(size: 16, weight: .heavy, design: .monospaced))
                     .foregroundColor(.white)
-                Text("Lvl \(entry.level)")
+                Text("Seviye \(entry.level)")
                     .font(.caption)
                     .foregroundColor(.gray)
             }

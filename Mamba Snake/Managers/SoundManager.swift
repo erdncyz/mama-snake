@@ -25,6 +25,7 @@ class SoundManager {
     }
 
     func play(_ type: SoundType) {
+        guard UserDefaults.standard.object(forKey: "soundEnabled") as? Bool ?? true else { return }
         switch type {
         case .start: playStartSound()
         case .crash: playCrashSound()
