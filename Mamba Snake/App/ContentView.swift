@@ -32,11 +32,18 @@ struct ContentView: View {
                 120,
                 layout.size.height - hudHeight - hintHeight - adHeight
             )
-            let arenaWidth = max(1, min(layout.size.width, 1000) - 24)
-            let arenaHeight = min(
+            let maxArenaWidth = max(1, min(layout.size.width, 1000) - 24)
+            let maxArenaHeight = min(
                 remainingHeight,
-                arenaWidth * 4 / 3
+                maxArenaWidth * 4 / 3
             )
+            // Snap the frame to a whole number of square cells so the grid
+            // meets the border on every side with no leftover margin.
+            let arenaSize = GameScene.gridLayout(
+                fitting: CGSize(width: maxArenaWidth, height: maxArenaHeight)
+            ).mapSize
+            let arenaWidth = arenaSize.width
+            let arenaHeight = arenaSize.height
             let nextLifeLevel = (manager.level / 10 + 1) * 10
             ZStack {
                 ArenaBackground(theme: ArenaTheme.resolved(menuTheme), grid: false).ignoresSafeArea()

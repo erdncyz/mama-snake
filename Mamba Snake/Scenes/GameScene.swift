@@ -19,6 +19,39 @@ class GameScene: SKScene {
 
     // MARK: - Configuration
     static let boundaryInset = 0
+    /// Number of cells along the shorter arena axis.
+    static let targetShortAxisCells = 30
+
+    struct GridLayout {
+        let cols: Int
+        let rows: Int
+        let cellSize: CGFloat
+        var mapSize: CGSize {
+            CGSize(width: CGFloat(cols) * cellSize, height: CGFloat(rows) * cellSize)
+        }
+    }
+
+    /// Square-cell grid that fills `size` as much as possible. Keeping this in
+    /// one place lets SwiftUI size the arena frame to an exact cell multiple,
+    /// so no partial-cell gap is left between the grid and the frame.
+    static func gridLayout(fitting size: CGSize) -> GridLayout {
+        let width = max(1, size.width)
+        let height = max(1, size.height)
+        let short = targetShortAxisCells
+        var cols: Int
+        var rows: Int
+        // On wide (landscape/iPad) layouts the row count anchors the cell size;
+        // on portrait layouts the column count does.
+        if width <= height {
+            cols = short
+            rows = max(short, Int(floor(height / (width / CGFloat(cols)))))
+        } else {
+            rows = short
+            cols = max(short, Int(floor(width / (height / CGFloat(rows)))))
+        }
+        let cellSize = min(width / CGFloat(cols), height / CGFloat(rows))
+        return GridLayout(cols: cols, rows: rows, cellSize: cellSize)
+    }
 
     var gridSize: CGFloat = 25.0
     var cols: Int = 0
@@ -167,28 +200,18 @@ class GameScene: SKScene {
         // which places horizontal gameplay boundaries outside the arena.
         let viewSize = size
 
-        let targetShortAxisCells = 30
         let boardInset: CGFloat = 0
         let availableWidth = max(1, viewSize.width - boardInset * 2)
         let availableHeight = max(1, viewSize.height - boardInset * 2)
 
         // Keep cells square while filling both portrait and landscape arenas.
-        // On wide iPad layouts the row count anchors the cell size; on portrait
-        // layouts the column count does. This prevents a square map floating in
-        // the middle of a wide arena.
-        if availableWidth <= availableHeight {
-            cols = targetShortAxisCells
-            gridSize = availableWidth / CGFloat(cols)
-            rows = max(targetShortAxisCells, Int(floor(availableHeight / gridSize)))
-        } else {
-            rows = targetShortAxisCells
-            gridSize = availableHeight / CGFloat(rows)
-            cols = max(targetShortAxisCells, Int(floor(availableWidth / gridSize)))
-        }
-        gridSize = min(
-            availableWidth / CGFloat(cols),
-            availableHeight / CGFloat(rows)
-        )
+        // ContentView sizes the arena with the same helper, so the grid covers
+        // the frame edge-to-edge instead of leaving a partial-cell margin.
+        let layout = Self.gridLayout(
+            fitting: CGSize(width: availableWidth, height: availableHeight))
+        cols = layout.cols
+        rows = layout.rows
+        gridSize = layout.cellSize
         // Textures must be regenerated after calculating the current device's
         // cell size. Reusing the initial 25-point textures clips edge rows.
         setupTextures()
@@ -1138,8 +1161,14 @@ class GameScene: SKScene {
 
     func updateSingleTile(x: Int, y: Int) {
         let type = grid[x][y]
-        let visualType: CellType =
-            type == .trail || type == .border ? .empty : type
+        // Walls are walkable claimed ground; draw them like filled cells so the
+        // outer ring does not read as an empty margin around the arena.
+        let visualType: CellType
+        switch type {
+        case .trail: visualType = .empty
+        case .border: visualType = .filled
+        default: visualType = type
+        }
         if visualType.rawValue < tileMap.tileSet.tileGroups.count {
             tileMap.setTileGroup(
                 tileMap.tileSet.tileGroups[visualType.rawValue], forColumn: x, row: y)
