@@ -7,6 +7,26 @@ extension GameScene {
         carrier.position = artwork.position
         carrier.zPosition = artwork.zPosition
         carrier.zRotation = artwork.zRotation
+        let correction = SKNode()
+        correction.name = "aspectCorrection"
+        carrier.addChild(correction)
+        installArtwork(artwork, on: carrier)
+        return carrier
+    }
+
+    /// Replaces bug and snake sprites with the current customization without resetting the level.
+    func applySelectedSkins() {
+        guard bugNode != nil, snakeNode != nil else { return }
+        installArtwork(BugSkin.current.makeNode(gridSize: gridSize), on: bugNode)
+        let snakeSkin = SnakeSkin.current
+        installArtwork(snakeSkin.makeHead(gridSize: gridSize), on: snakeNode)
+        for segment in snakeBody {
+            installArtwork(snakeSkin.makeBodySegment(gridSize: gridSize), on: segment)
+        }
+    }
+
+    private func installArtwork(_ artwork: SKSpriteNode, on carrier: SKSpriteNode) {
+        carrier.size = artwork.size
         artwork.position = .zero
         artwork.zPosition = 0
         artwork.zRotation = 0
@@ -15,11 +35,9 @@ extension GameScene {
             let factor = min(artwork.size.width / textureSize.width, artwork.size.height / textureSize.height)
             artwork.size = CGSize(width: textureSize.width * factor, height: textureSize.height * factor)
         }
-        let correction = SKNode()
-        correction.name = "aspectCorrection"
+        guard let correction = carrier.childNode(withName: "aspectCorrection") else { return }
+        correction.removeAllChildren()
         correction.addChild(artwork)
-        carrier.addChild(correction)
-        return carrier
     }
 
     func updateActorPresentation() {

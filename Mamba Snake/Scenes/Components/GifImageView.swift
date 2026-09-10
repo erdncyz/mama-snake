@@ -13,6 +13,12 @@ import SwiftUI
             let imageView = UIImageView()
             imageView.contentMode = .scaleAspectFit
             imageView.clipsToBounds = true
+            imageView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            imageView.setContentHuggingPriority(.defaultLow, for: .vertical)
+            imageView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            imageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+            // Pixel-art GIF'lerin büyütülünce keskin kalması için nearest filtreleme.
+            imageView.layer.magnificationFilter = .nearest
 
             if let gifURL = Bundle.main.url(forResource: gifName, withExtension: "gif"),
                 let gifData = try? Data(contentsOf: gifURL),

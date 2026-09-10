@@ -7,6 +7,7 @@ import SwiftUI
 struct LeaderboardView: View {
     @ObservedObject var gameManager = GameManager.shared
     @StateObject private var firebaseService = FirebaseService.shared
+    @AppStorage(ArenaTheme.storageKey) private var menuTheme = ArenaTheme.midnight.rawValue
 
     private let leaderboardLimit = 10
 
@@ -21,53 +22,28 @@ struct LeaderboardView: View {
 
     var body: some View {
         ZStack {
-            ArenaBackground(theme: .midnight).ignoresSafeArea()
+            ArenaBackground(theme: ArenaTheme.resolved(menuTheme))
+                .ignoresSafeArea()
 
             ScrollView {
-              VStack(spacing: 20) {
-                HStack {
-                    Spacer()
-                    Button(action: { isPresented = false }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title)
-                            .foregroundColor(.white)
-                            .frame(minWidth: 44, minHeight: 44)
+                VStack(spacing: 22) {
+                    header
+
+                    if gameManager.nickname.isEmpty {
+                        nicknameInputView
+                    } else {
+                        scoresContentView
                     }
-                    .accessibilityLabel("Liderlik tablosunu kapat")
                 }
-                .padding(.horizontal)
-
-                VStack(spacing: 5) {
-                    Text("MAMBA SNAKE")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundColor(MambaStyle.mint)
-                        .tracking(2)
-
-                    Text("Liderlik tablosu")
-                        .font(.system(.largeTitle, design: .rounded).bold())
-                        .foregroundColor(MambaStyle.mint)
-                }
-
-                if gameManager.nickname.isEmpty {
-                    nicknameInputView
-                } else {
-                    scoresContentView
-                }
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 25)
-                    .fill(MambaStyle.surface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 25)
-                            .stroke(Color.white.opacity(0.09), lineWidth: 1)
-                    )
-            )
-            .padding(20)
-            .frame(maxWidth: 640)
-            .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
             }
         }
+        .menuTheme(ArenaTheme.resolved(menuTheme))
+        .preferredColorScheme(.dark)
         .onAppear {
             if !gameManager.nickname.isEmpty {
                 loadScores()
@@ -75,113 +51,212 @@ struct LeaderboardView: View {
         }
     }
 
-    var nicknameInputView: some View {
-        VStack(spacing: 15) {
-            Text("Sıralamayı görmek için oyuncu adını gir")
-                .foregroundColor(.gray)
-                .font(.subheadline)
-
-            TextField("Oyuncu adı", text: $tempNickname)
-                .padding()
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(10)
-                .foregroundColor(.white)
-                .font(.headline)
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
-
-            Button(action: {
-                guard !tempNickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    return
+    private var header: some View {
+        VStack(spacing: 18) {
+            HStack {
+                HStack(spacing: 7) {
+                    Circle().fill(MambaStyle.mint).frame(width: 6, height: 6)
+                    Text("MAMBA ARCADE")
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(2)
                 }
-                gameManager.setNickname(tempNickname)
+                .foregroundStyle(MambaStyle.mint)
+
+                Spacer()
+
+                Button(action: { isPresented = false }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.white.opacity(0.07), in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.09)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L10n.string("leaderboard.close"))
+            }
+
+            HStack(spacing: 18) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(L10n.string("leaderboard.hero"))
+                        .font(.system(size: 38, weight: .black, design: .rounded))
+                        .tracking(-1.5)
+                        .lineSpacing(-4)
+                    Text(L10n.string("leaderboard.subtitle"))
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.58))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 42, weight: .bold))
+                    .foregroundStyle(.orange)
+                    .frame(width: 88, height: 88)
+                    .background(Color.orange.opacity(0.11), in: RoundedRectangle(cornerRadius: 26))
+                    .overlay(RoundedRectangle(cornerRadius: 26).stroke(Color.orange.opacity(0.24)))
+                    .shadow(color: .orange.opacity(0.12), radius: 18, y: 8)
+            }
+        }
+    }
+
+    private var nicknameInputView: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label(L10n.string("leaderboard.nickname_title"), systemImage: "person.crop.circle.badge.plus")
+                .font(.system(.title3, design: .rounded).weight(.bold))
+                .foregroundStyle(MambaStyle.mint)
+
+            Text(L10n.string("leaderboard.nickname_help"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            TextField(L10n.string("overlay.nickname_placeholder"), text: $tempNickname)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(.headline, design: .rounded))
+                .padding(17)
+                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 17))
+                .overlay(RoundedRectangle(cornerRadius: 17).stroke(.white.opacity(0.10)))
+                .onChange(of: tempNickname) { value in
+                    tempNickname = String(value.prefix(PlayerNickname.maxLength))
+                }
+
+            Button {
+                let nickname = PlayerNickname.sanitize(tempNickname)
+                guard !nickname.isEmpty else { return }
+                gameManager.setNickname(nickname)
                 gameManager.submitScore()
                 loadScores()
-            }) {
-                Text("Kaydet ve göster")
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(MambaStyle.mint)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+            } label: {
+                Label(L10n.string("leaderboard.save_show"), systemImage: "arrow.right")
             }
+            .buttonStyle(MambaButtonStyle(primary: true))
+            .disabled(PlayerNickname.sanitize(tempNickname).isEmpty)
+            .opacity(PlayerNickname.sanitize(tempNickname).isEmpty ? 0.45 : 1)
         }
-        .padding()
+        .mambaCard()
     }
 
-    var scoresContentView: some View {
-        VStack(spacing: 15) {
+    private var scoresContentView: some View {
+        VStack(spacing: 16) {
             if isLoading {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                VStack(spacing: 14) {
+                    ProgressView().tint(MambaStyle.mint).controlSize(.large)
+                    Text(L10n.string("leaderboard.loading"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 48)
+                .mambaCard()
             } else if let error = errorMessage {
-                Text("Yüklenemedi: \(error)")
-                    .foregroundColor(.red)
-                    .font(.caption)
-                Button("Tekrar dene") {
-                    loadScores()
+                VStack(spacing: 14) {
+                    Image(systemName: "wifi.exclamationmark")
+                        .font(.system(size: 30))
+                        .foregroundStyle(.orange)
+                    Text(L10n.string("leaderboard.load_failed"))
+                        .font(.system(.title3, design: .rounded).bold())
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button(L10n.string("leaderboard.retry"), action: loadScores)
+                        .buttonStyle(MambaButtonStyle(primary: true))
+                }
+                .mambaCard()
+            } else {
+                personalBestCard
+                leaderboardCard
+
+                Button(action: shareLeaderboard) {
+                    Label(L10n.string("leaderboard.share"), systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(MambaButtonStyle())
+            }
+        }
+    }
+
+    private var personalBestCard: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "person.fill")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(MambaStyle.mint)
+                .frame(width: 46, height: 46)
+                .background(MambaStyle.mint.opacity(0.11), in: RoundedRectangle(cornerRadius: 15))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.string("leaderboard.your_best"))
+                    .font(.system(size: 8, weight: .heavy))
+                    .tracking(1.5)
+                    .foregroundStyle(.secondary)
+                Text(gameManager.nickname)
+                    .font(.system(.headline, design: .rounded).bold())
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if let best = userBest {
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(best.score.formatted())
+                        .font(.system(size: 24, weight: .black, design: .rounded))
+                        .monospacedDigit()
+                    Text(L10n.string("common.level_upper", best.level))
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(1)
+                        .foregroundStyle(MambaStyle.mint)
                 }
             } else {
-                VStack(spacing: 10) {
-                    HStack {
-                        Text("En iyi \(leaderboardLimit) oyuncu")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                        Spacer()
-                    }
-
-                    if topScores.isEmpty {
-                        Text("İlk rekoru sen yaz. Oyna ve sıralamada yerini al.")
-                            .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 20)
-                    }
-                    LazyVStack(spacing: 8) {
-                        ForEach(Array(topScores.enumerated()), id: \.offset) {
-                            index, entry in
-                            scoreRow(rank: index + 1, entry: entry)
-                        }
-                    }
-                }
-
-                Divider().background(Color.gray)
-
-                VStack(spacing: 5) {
-                    Text("Senin rekorun")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-
-                    if let best = userBest {
-                        scoreRow(rank: nil, entry: best)
-                            .background(Color.green.opacity(0.2))
-                            .cornerRadius(8)
-                    } else {
-                        Text("Henüz bir rekor yok")
-                            .foregroundColor(.white.opacity(0.6))
-                            .font(.subheadline)
-                    }
-                }
-
-                Button(action: {
-                    shareLeaderboard()
-                }) {
-                    HStack {
-                        Image(systemName: "square.and.arrow.up")
-                        Text("Paylaş")
-                    }
-                    .font(.headline)
-                    .foregroundColor(.black)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 25)
-                    .background(MambaStyle.mint)
-                    .cornerRadius(20)
-                }
-                .padding(.top, 10)
+                Text(L10n.string("leaderboard.no_score"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal)
+        .padding(16)
+        .background(MambaStyle.mint.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(MambaStyle.mint.opacity(0.18)))
     }
 
-    func shareLeaderboard() {
+    private var leaderboardCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L10n.string("leaderboard.global"))
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(1.6)
+                        .foregroundStyle(MambaStyle.mint)
+                    Text(L10n.string("leaderboard.top_players", leaderboardLimit))
+                        .font(.system(.title3, design: .rounded).bold())
+                }
+                Spacer()
+                Image(systemName: "globe.europe.africa.fill")
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+
+            if topScores.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "trophy")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.orange)
+                    Text(L10n.string("leaderboard.first_record"))
+                        .font(.system(.headline, design: .rounded).bold())
+                    Text(L10n.string("leaderboard.play_to_rank"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
+            } else {
+                LazyVStack(spacing: 8) {
+                    ForEach(Array(topScores.enumerated()), id: \.offset) { index, entry in
+                        scoreRow(rank: index + 1, entry: entry)
+                    }
+                }
+            }
+        }
+        .mambaCard()
+    }
+
+    private func shareLeaderboard() {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
             let window = windowScene.windows.first
         else { return }
@@ -208,37 +283,85 @@ struct LeaderboardView: View {
         }
     }
 
-    func scoreRow(rank: Int?, entry: ScoreEntry) -> some View {
-        HStack {
-            if let rank = rank {
-                Text("#\(rank)")
-                    .font(.system(size: 16, weight: .bold, design: .monospaced))
-                    .foregroundColor(rank == 1 ? MambaStyle.mint : .white)
-                    .frame(width: 30, alignment: .leading)
-            }
+    private func scoreRow(rank: Int, entry: ScoreEntry) -> some View {
+        let isCurrentUser = PlayerNickname.sanitize(entry.nickname)
+            .localizedCaseInsensitiveCompare(PlayerNickname.sanitize(gameManager.nickname)) == .orderedSame
+        let accent = rankColor(rank)
 
-            Text(entry.nickname)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
-                .lineLimit(1)
+        return HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(accent.opacity(rank <= 3 ? 0.14 : 0.06))
+                if rank <= 3 {
+                    Image(systemName: rank == 1 ? "crown.fill" : "medal.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(accent)
+                } else {
+                    Text("\(rank)")
+                        .font(.system(size: 13, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.65))
+                }
+            }
+            .frame(width: 40, height: 40)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(entry.nickname)
+                        .font(.system(.subheadline, design: .rounded).bold())
+                        .lineLimit(1)
+                    if isCurrentUser {
+                        Text(L10n.string("leaderboard.you"))
+                            .font(.system(size: 7, weight: .heavy))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.black)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(MambaStyle.mint, in: Capsule())
+                    }
+                }
+                Text(L10n.string("common.level", entry.level))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
-            VStack(alignment: .trailing) {
-                Text("\(entry.score)")
-                    .font(.system(size: 16, weight: .heavy, design: .monospaced))
-                    .foregroundColor(.white)
-                Text("Seviye \(entry.level)")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-            }
+            Text(entry.score.formatted())
+                .font(.system(size: 17, weight: .black, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(rank <= 3 ? accent : .white)
         }
-        .padding(8)
-        .background(Color.black.opacity(0.3))
-        .cornerRadius(8)
+        .padding(10)
+        .background(
+            isCurrentUser ? MambaStyle.mint.opacity(0.08) : .white.opacity(rank <= 3 ? 0.05 : 0.025),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isCurrentUser ? MambaStyle.mint.opacity(0.24) : .white.opacity(0.06))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            L10n.string(
+                "leaderboard.row_accessibility",
+                rank,
+                entry.nickname,
+                entry.score,
+                entry.level
+            )
+        )
     }
 
-    func loadScores() {
+    private func rankColor(_ rank: Int) -> Color {
+        switch rank {
+        case 1: return .yellow
+        case 2: return Color(red: 0.78, green: 0.84, blue: 0.90)
+        case 3: return Color(red: 0.80, green: 0.47, blue: 0.25)
+        default: return .white
+        }
+    }
+
+    private func loadScores() {
         isLoading = true
         errorMessage = nil
         let limit = leaderboardLimit

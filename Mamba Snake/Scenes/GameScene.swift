@@ -18,11 +18,19 @@ import SpriteKit
 class GameScene: SKScene {
 
     // MARK: - Configuration
+    static let boundaryInset = 0
+
     var gridSize: CGFloat = 25.0
     var cols: Int = 0
     var rows: Int = 0
-    var bugSpeed: CGFloat = 200.0  // Bix Challenge tarzı hızlı hareket
+    var bugSpeed: CGFloat = 200.0  // iPhone referans arenasında nokta/sn
     let snakeSpeed: CGFloat = 160.0
+    /// 390pt genişlik / 30 hücre — iPhone’daki his. iPad’de hücre büyür, hız da onunla ölçeklenir.
+    private let referenceGridSize: CGFloat = 390.0 / 30.0
+
+    private var speedScale: CGFloat {
+        max(gridSize, 1) / referenceGridSize
+    }
 
     // MARK: - Game State
     var grid: [[CellType]] = []
@@ -34,6 +42,7 @@ class GameScene: SKScene {
     var isEating: Bool = false
 
     // MARK: - Nodes
+    var boardNode: SKNode!
     var tileMap: SKTileMapNode!
     var bugNode: SKSpriteNode!
     var snakeNode: SKSpriteNode!
@@ -53,7 +62,11 @@ class GameScene: SKScene {
     // Snake Movement History for Trail Effect
     var snakeHistory: [CGPoint] = []
     var snakeBodyCount: Int {
-        return GameManager.shared.level
+        LevelRules.snakeBodyCount(for: GameManager.shared.level)
+    }
+
+    var currentLevelSnakeSpeed: CGFloat {
+        LevelRules.snakeSpeed(base: snakeSpeed, level: GameManager.shared.level) * speedScale
     }
     var snakeSegmentSpacing: CGFloat { gridSize * 1.5 }
 
@@ -90,10 +103,10 @@ class GameScene: SKScene {
         trailShape.strokeColor = .clear
         trailTexture = view?.texture(from: trailShape) ?? SKTexture()
 
-        // A quiet, high-contrast boundary works with every arena palette.
+        // Opaque enough to read against both dune shadows and the night sky.
         let border = SKShapeNode(rectOf: size, cornerRadius: 3)
-        border.fillColor = SKColor(red: 0.65, green: 0.96, blue: 0.55, alpha: 0.18)
-        border.strokeColor = SKColor(red: 0.65, green: 0.96, blue: 0.55, alpha: 0.45)
+        border.fillColor = SKColor(red: 0.65, green: 0.96, blue: 0.55, alpha: 0.34)
+        border.strokeColor = SKColor(red: 0.65, green: 0.96, blue: 0.55, alpha: 0.8)
         border.lineWidth = 1
         borderTexture = view?.texture(from: border) ?? SKTexture()
     }
@@ -113,12 +126,23 @@ class GameScene: SKScene {
         self.anchorPoint = CGPoint(x: 0, y: 0)
         view.preferredFramesPerSecond = 60
         view.ignoresSiblingOrder = true
-        view.shouldCullNonVisibleNodes = true
-        view.isAsynchronous = true
+        // Edge tiles vanish when SpriteKit culls nodes that touch the view bounds.
+        view.shouldCullNonVisibleNodes = false
+        view.isAsynchronous = false
 
-        setupTextures()
         startLevel()
         setupGestures(view: view)
+    }
+
+    override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        guard tileMap != nil,
+            abs(size.width - oldSize.width) > 0.5 || abs(size.height - oldSize.height) > 0.5
+        else { return }
+
+        // resizeFill keeps scene coordinates equal to SpriteView coordinates.
+        // Rebuild after layout changes so the logical and visible borders stay aligned.
+        startLevel()
     }
 
     // MARK: - Level Setup
@@ -130,32 +154,44 @@ class GameScene: SKScene {
     }
 
     func startLevel() {
-        // Crash Önleme: View veya Texture'lar hazır değilse devam etme
+        // Crash Önleme: View hazır değilse devam etme
         guard view != nil, size.width > 1, size.height > 1 else { return }
-        if emptyTexture == nil { setupTextures() }
-        if emptyTexture == nil { return }
 
         removeAllChildren()
 
         // SwiftUI renders the selected arena beneath the transparent scene.
         backgroundColor = .clear
 
-        let availableWidth = size.width
-        let availableHeight = size.height
+        // ContentView explicitly keeps scene.size equal to the clipped arena.
+        // SKView.bounds can report the hosting view's full-screen height here,
+        // which places horizontal gameplay boundaries outside the arena.
+        let viewSize = size
 
-        let targetColumns = 30
-        cols = targetColumns
+        let targetShortAxisCells = 30
+        let boardInset: CGFloat = 0
+        let availableWidth = max(1, viewSize.width - boardInset * 2)
+        let availableHeight = max(1, viewSize.height - boardInset * 2)
 
-        // Böcek sprite'ı hücrenin ~5 katı olduğu için çit üzerindeyken dışarı taşar.
-        // Taşan kısmın ekranda kalması için her kenarda 2 hücrelik pay bırakıyoruz.
-        let edgeCells: CGFloat = 2
-        let widthBasedGridSize = availableWidth / (CGFloat(targetColumns) + edgeCells * 2)
-        rows = max(
-            30,
-            Int(floor(availableHeight / widthBasedGridSize)) - Int(edgeCells * 2))
+        // Keep cells square while filling both portrait and landscape arenas.
+        // On wide iPad layouts the row count anchors the cell size; on portrait
+        // layouts the column count does. This prevents a square map floating in
+        // the middle of a wide arena.
+        if availableWidth <= availableHeight {
+            cols = targetShortAxisCells
+            gridSize = availableWidth / CGFloat(cols)
+            rows = max(targetShortAxisCells, Int(floor(availableHeight / gridSize)))
+        } else {
+            rows = targetShortAxisCells
+            gridSize = availableHeight / CGFloat(rows)
+            cols = max(targetShortAxisCells, Int(floor(availableWidth / gridSize)))
+        }
         gridSize = min(
-            widthBasedGridSize,
-            availableHeight / (CGFloat(rows) + edgeCells * 2))
+            availableWidth / CGFloat(cols),
+            availableHeight / CGFloat(rows)
+        )
+        // Textures must be regenerated after calculating the current device's
+        // cell size. Reusing the initial 25-point textures clips edge rows.
+        setupTextures()
 
         grid = Array(repeating: Array(repeating: .empty, count: rows), count: cols)
         trailCellIndices.removeAll(keepingCapacity: true)
@@ -163,14 +199,17 @@ class GameScene: SKScene {
         hasHandledSwipeInput = false
         lastUpdateTime = 0
 
-        // Set Borders (Now these will be off-screen)
-        for x in 0..<cols {
-            grid[x][0] = .border
-            grid[x][rows - 1] = .border
-        }
-        for y in 0..<rows {
-            grid[0][y] = .border
-            grid[cols - 1][y] = .border
+        // Outermost cells are the walkable walls; keep them on the arena edge
+        // so the bug and snake sit against the visible frame.
+        for inset in 0...Self.boundaryInset {
+            for x in 0..<cols {
+                grid[x][inset] = .border
+                grid[x][rows - 1 - inset] = .border
+            }
+            for y in 0..<rows {
+                grid[inset][y] = .border
+                grid[cols - 1 - inset][y] = .border
+            }
         }
 
         let tileSet = SKTileSet(tileGroups: [
@@ -193,38 +232,29 @@ class GameScene: SKScene {
             tileSize: CGSize(width: gridSize, height: gridSize))
 
         tileMap.anchorPoint = .zero
+        tileMap.position = .zero
 
         let mapWidth = CGFloat(cols) * gridSize
         let mapHeight = CGFloat(rows) * gridSize
-        tileMap.position = CGPoint(
-            x: max(0, (availableWidth - mapWidth) / 2),
-            y: max(0, (availableHeight - mapHeight) / 2))
-        addChild(tileMap)
+        boardNode = SKNode()
+        boardNode.position = CGPoint(
+            x: boardInset + max(0, (availableWidth - mapWidth) / 2),
+            y: boardInset + max(0, (availableHeight - mapHeight) / 2))
+        addChild(boardNode)
+        boardNode.addChild(tileMap)
         refreshTileMap()
 
-        // --- Bug Setup (Animated Spider) ---
-        // GIF animasyonlu örümcek kullan
-        if let animatedSpider = SKSpriteNode.createAnimatedSprite(
-            gifNamed: "Spider",
-            size: CGSize(width: gridSize * 5.0, height: gridSize * 5.0)  // Grid küçüldüğü için çarpanı büyüttük
-        ) {
-            bugNode = animatedSpider
-        } else {
-            // Fallback: GIF yüklenemezse eski bug kullan
-            print("⚠️ Spider.gif yüklenemedi, fallback Bug.png kullanılıyor")
-            bugNode = SKSpriteNode(imageNamed: "Bug")
-            bugNode.size = CGSize(width: gridSize * 4.0, height: gridSize * 4.0)
-        }
-
+        // --- Bug Setup (kullanıcının seçtiği animasyonlu karakter) ---
+        bugNode = BugSkin.current.makeNode(gridSize: gridSize)
         bugNode.zPosition = 10
 
-        // Böceği ekranın en altına, ortaya yerleştir (Bix Challenge tarzı)
-        bugGridPos = (cols / 2, 0)
+        // Start on the real, inset bottom gameplay wall.
+        bugGridPos = (cols / 2, Self.boundaryInset)
         let bugX = CGFloat(bugGridPos.x) * gridSize + gridSize / 2
         let bugY = CGFloat(bugGridPos.y) * gridSize + gridSize / 2
         bugNode.position = CGPoint(x: bugX, y: bugY)
         bugNode = makeActorCarrier(bugNode)
-        tileMap.addChild(bugNode)
+        boardNode.addChild(bugNode)
 
         // Ağ efekti setup
         setupBugTrailEffect()
@@ -238,7 +268,7 @@ class GameScene: SKScene {
         activeTrailNode.zPosition = 5
         activeTrailNode.glowWidth = 2.0  // Glow effect
         activeTrailPath = CGMutablePath()
-        tileMap.addChild(activeTrailNode)
+        boardNode.addChild(activeTrailNode)
 
         // --- Snake Setup ---
         setupSnake()
@@ -252,6 +282,7 @@ class GameScene: SKScene {
         currentState = .ready
 
         GameManager.shared.percentCovered = 0.0
+        GameManager.shared.lastCaptureAward = nil
 
         // Initial Sync based on GameManager
         if GameManager.shared.isPlaying {
@@ -309,35 +340,35 @@ class GameScene: SKScene {
         let centerY = CGFloat(spawnY) * gridSize + gridSize / 2
         snakePosition = CGPoint(x: centerX, y: centerY)
 
+        // Kullanıcının seçtiği yılan görünümü
+        let snakeSkin = SnakeSkin.current
+
         // Create Body Segments
         for _ in 0..<snakeBodyCount {
-            var seg = SKSpriteNode(imageNamed: "SnakeBody")
-            seg.size = CGSize(width: gridSize * 2.5, height: gridSize * 2.5)  // Grid küçüldüğü için büyüttük
+            var seg = snakeSkin.makeBodySegment(gridSize: gridSize)
             seg.zPosition = 8
             seg.position = snakePosition
             seg = makeActorCarrier(seg)
-            tileMap.addChild(seg)
+            boardNode.addChild(seg)
             snakeBody.append(seg)
         }
 
-        // Create Head
-        snakeNode = SKSpriteNode(imageNamed: "SnakeHead")
-        snakeNode.size = CGSize(width: gridSize * 3.0, height: gridSize * 3.0)  // Grid küçüldüğü için büyütük
+        // Create Head (animasyonlu — dil çıkarma)
+        snakeNode = snakeSkin.makeHead(gridSize: gridSize)
         snakeNode.zPosition = 9
         snakeNode.position = snakePosition
 
         // Random Initial Direction
         let randomStartAngle = CGFloat.random(in: 0...(2 * .pi))
-
-        // Increase speed by 10% each level
-        let levelMultiplier = 1.0 + (CGFloat(GameManager.shared.level - 1) * 0.1)
-        let currentLevelSpeed = snakeSpeed * levelMultiplier
+        timeSinceLastSnakeTurn = 0
+        nextSnakeTurnTime = LevelRules.snakeTurnInterval(for: GameManager.shared.level)
+        let currentLevelSpeed = currentLevelSnakeSpeed
 
         snakeVelocity = CGVector(
             dx: cos(randomStartAngle) * currentLevelSpeed,
             dy: sin(randomStartAngle) * currentLevelSpeed)
         snakeNode = makeActorCarrier(snakeNode)
-        tileMap.addChild(snakeNode)
+        boardNode.addChild(snakeNode)
 
         snakeHistory.append(snakePosition)
     }
@@ -419,7 +450,7 @@ class GameScene: SKScene {
         default: break
         }
 
-        let distance = bugSpeed * dt
+        let distance = bugSpeed * speedScale * dt
         let currentPos = bugNode.position
         var nextPos = CGPoint(x: currentPos.x + dx * distance, y: currentPos.y + dy * distance)
 
@@ -441,13 +472,25 @@ class GameScene: SKScene {
         var hitBottom = false
         var hitTop = false
         
-        // Sol ve Alt sınır (0 yerine radius kadar içeride durmalı)
-        if finalPos.x < radius { finalPos.x = radius; hitLeft = true }
-        if finalPos.y < radius { finalPos.y = radius; hitBottom = true }
+        let boundaryInset = CGFloat(Self.boundaryInset) * gridSize
 
-        // Sağ ve Üst sınır (Width/Height yerine radius kadar içeride durmalı)
-        if finalPos.x > mapWidth - radius { finalPos.x = mapWidth - radius; hitRight = true }
-        if finalPos.y > mapHeight - radius { finalPos.y = mapHeight - radius; hitTop = true }
+        if finalPos.x < boundaryInset + radius {
+            finalPos.x = boundaryInset + radius
+            hitLeft = true
+        }
+        if finalPos.y < boundaryInset + radius {
+            finalPos.y = boundaryInset + radius
+            hitBottom = true
+        }
+
+        if finalPos.x > mapWidth - boundaryInset - radius {
+            finalPos.x = mapWidth - boundaryInset - radius
+            hitRight = true
+        }
+        if finalPos.y > mapHeight - boundaryInset - radius {
+            finalPos.y = mapHeight - boundaryInset - radius
+            hitTop = true
+        }
 
         let hitMovementBoundary =
             (hitLeft && currentDirection == .left)
@@ -464,8 +507,14 @@ class GameScene: SKScene {
 
         // Ekstra Güvenlik: Eğer logic grid dışına çıkarsa düzelt
         // Logic değerleri cols/rows ile sınırlı olmalı
-        let safeLogicX = max(0, min(cols - 1, logicX))
-        let safeLogicY = max(0, min(rows - 1, logicY))
+        let safeLogicX = max(
+            Self.boundaryInset,
+            min(cols - 1 - Self.boundaryInset, logicX)
+        )
+        let safeLogicY = max(
+            Self.boundaryInset,
+            min(rows - 1 - Self.boundaryInset, logicY)
+        )
 
         if safeLogicX != logicX || safeLogicY != logicY {
             // Logic koordinatları fiziksel koordinatlara uymuyorsa (floating point hatası vs)
@@ -613,18 +662,14 @@ class GameScene: SKScene {
         timeSinceLastSnakeTurn += TimeInterval(dt)
         if timeSinceLastSnakeTurn >= nextSnakeTurnTime {
             timeSinceLastSnakeTurn = 0
-            // Random interval between 0.5 and 2.5 seconds
-            nextSnakeTurnTime = Double.random(in: 0.5...2.5)
+            nextSnakeTurnTime = LevelRules.snakeTurnInterval(for: GameManager.shared.level)
 
             // Randomly rotate velocity vector
             // Turn between -60 and +60 degrees to maintain forward moment but erratic path
             let currentAngle = atan2(snakeVelocity.dy, snakeVelocity.dx)
             let change = CGFloat.random(in: -CGFloat.pi / 3...CGFloat.pi / 3)
             let newAngle = currentAngle + change
-
-            // Recalculate speed based on level
-            let levelMultiplier = 1.0 + (CGFloat(GameManager.shared.level - 1) * 0.1)
-            let currentLevelSpeed = snakeSpeed * levelMultiplier
+            let currentLevelSpeed = currentLevelSnakeSpeed
 
             snakeVelocity = CGVector(
                 dx: cos(newAngle) * currentLevelSpeed, dy: sin(newAngle) * currentLevelSpeed)
@@ -876,8 +921,9 @@ class GameScene: SKScene {
 
         var filledCount = 0
         var newlyFilled = 0
-        // Oynanabilir alan: dış çit hariç kalan hücreler
-        let totalCells = (cols - 2) * (rows - 2)
+        let playableColumns = cols - (Self.boundaryInset + 1) * 2
+        let playableRows = rows - (Self.boundaryInset + 1) * 2
+        let totalCells = playableColumns * playableRows
 
         for x in 0..<cols {
             for y in 0..<rows {
@@ -894,7 +940,11 @@ class GameScene: SKScene {
                 // i.e. not the outer borders we added
                 if grid[x][y] == .filled {
                     // exclude outer padding from stats
-                    if x > 0 && x < cols - 1 && y > 0 && y < rows - 1 {
+                    if x > Self.boundaryInset
+                        && x < cols - 1 - Self.boundaryInset
+                        && y > Self.boundaryInset
+                        && y < rows - 1 - Self.boundaryInset
+                    {
                         filledCount += 1
                     }
                 }
@@ -905,12 +955,18 @@ class GameScene: SKScene {
 
         refreshTileMap()
         let pct = Float(filledCount) / Float(totalCells) * 100.0
+        let previousPercent = GameManager.shared.percentCovered
 
         // Puan yalnızca bu hamlede YENİ kapatılan hücreler için verilir;
-        // seviye çarpanı ve büyük alan bonusu GameManager.awardCapture içinde.
+        // seviye çarpanı, büyük alan ve hedef-üstü bonus GameManager.awardCapture içinde.
         DispatchQueue.main.async {
             GameManager.shared.percentCovered = pct
-            GameManager.shared.awardCapture(cells: newlyFilled)
+            GameManager.shared.awardCapture(
+                cells: newlyFilled,
+                previousPercent: previousPercent,
+                newPercent: pct,
+                totalPlayable: totalCells
+            )
         }
         playSound(.score)  // Score/Confirm
     }
@@ -970,30 +1026,40 @@ class GameScene: SKScene {
         if lives <= 0 {
             gameOver(win: false)
         } else {
-            resetPositions()
-            // Clear trails
-            for x in 0..<cols {
-                for y in 0..<rows {
-                    if grid[x][y] == .trail { grid[x][y] = .empty }
-                }
-            }
-            trailCellIndices.removeAll(keepingCapacity: true)
-            refreshTileMap()
-
-            // Clear web trail
-            clearWebTrail()
-
-            // Pause Game to avoid instant death loop
+            restoreAfterLifeLost()
             currentState = .ready
-            currentDirection = .none
-            nextDirection = .none
 
             DispatchQueue.main.async {
-                GameManager.shared.isPlaying = false  // Paused for ready
-                // Maybe show "Tap to Continue" overlay?
-                // For now we just wait for tap logic in ContentView
+                GameManager.shared.isPlaying = false
             }
         }
+    }
+
+    /// Watch-ad extra life: leave claimed area, return to last safe cell, resume.
+    func reviveAfterAd() {
+        lives = max(1, GameManager.shared.lives)
+        restoreAfterLifeLost()
+        currentState = .playing
+        lastUpdateTime = 0
+    }
+
+    private func restoreAfterLifeLost() {
+        isEating = false
+        removeAllActions()
+        bugNode?.removeAllActions()
+        snakeNode?.removeAllActions()
+        snakeBody.forEach { $0.removeAllActions() }
+
+        for x in 0..<cols {
+            for y in 0..<rows {
+                if grid[x][y] == .trail { grid[x][y] = .empty }
+            }
+        }
+        trailCellIndices.removeAll(keepingCapacity: true)
+        resetPositions()
+        refreshTileMap()
+        currentDirection = .none
+        nextDirection = .none
     }
 
     func resetPositions() {
@@ -1005,7 +1071,7 @@ class GameScene: SKScene {
 
         // Eğer bugGridPos hiç set edilmemişse (nadiren), merkeze al.
         if bugGridPos.x == 0 && bugGridPos.y == 0 {
-            bugGridPos = (cols / 2, 0)
+            bugGridPos = (cols / 2, Self.boundaryInset)
         }
 
         // Snap to grid (Görseli logic'e oturt)
@@ -1072,7 +1138,8 @@ class GameScene: SKScene {
 
     func updateSingleTile(x: Int, y: Int) {
         let type = grid[x][y]
-        let visualType: CellType = type == .trail ? .empty : type
+        let visualType: CellType =
+            type == .trail || type == .border ? .empty : type
         if visualType.rawValue < tileMap.tileSet.tileGroups.count {
             tileMap.setTileGroup(
                 tileMap.tileSet.tileGroups[visualType.rawValue], forColumn: x, row: y)

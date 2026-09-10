@@ -92,7 +92,7 @@ extension GameScene {
         // Blend mode - Parlak
         trailEmitter.particleBlendMode = .add
         trailEmitter.zPosition = 7
-        trailEmitter.targetNode = tileMap
+        trailEmitter.targetNode = boardNode
 
         // Başlangıçta kapalı
         trailEmitter.particleBirthRate = 0
@@ -154,7 +154,7 @@ extension GameScene {
             physicsBody.isDynamic = true
 
             segment.physicsBody = physicsBody
-            tileMap.addChild(segment)
+            boardNode.addChild(segment)
             webSegments.append(segment)
 
             // Joint ile önceki segment'e bağla

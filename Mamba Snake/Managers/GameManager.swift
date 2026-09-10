@@ -35,8 +35,11 @@ class GameManager: ObservableObject {
 
     /// Son tamamlanan bölümde kazanılan bonus (bölüm sonu ekranında gösterilir)
     @Published var lastLevelBonus: Int = 0
+    /// Son kapanışın puanı; HUD kısa süre gösterir.
+    @Published var lastCaptureAward: CaptureAward?
 
     let targetPercent: Float = 75.0
+    private var captureAwardToken = 0
 
     func reset() {
         score = 0
@@ -44,6 +47,7 @@ class GameManager: ObservableObject {
         percentCovered = 0.0
         level = 1
         lastLevelBonus = 0
+        lastCaptureAward = nil
         resetState()
     }
 
@@ -56,14 +60,14 @@ class GameManager: ObservableObject {
     }
 
     func nextLevel() {
-        // Every 10th level (10, 20, 30...) give an extra life
-        if (level + 1) % 10 == 0 {
+        if LevelRules.grantsExtraLife(at: level + 1) {
             lives += 1
         }
 
         level += 1
         percentCovered = 0.0
         lastLevelBonus = 0
+        lastCaptureAward = nil
         isLevelComplete = false
         isPlaying = true
     }
@@ -94,16 +98,29 @@ class GameManager: ObservableObject {
     }
 
     /// Kapatılan YENİ hücreler için puan verir.
-    /// Hücre başına 2 puan × seviye; tek hamlede 40+ hücre kapatmak +%50 bonus verir.
+    /// Hücre × 2 × seviye; kalan boş alanın ~%12'si (en az 50 hücre) +%50;
+    /// %75'i aşan her yüzde için ekstra bonus.
     @discardableResult
-    func awardCapture(cells: Int) -> Int {
-        guard cells > 0 else { return 0 }
-        var earned = cells * 2 * level
-        if cells >= 40 {
-            earned = (earned * 3) / 2
-        }
-        score += earned
-        return earned
+    func awardCapture(
+        cells: Int,
+        previousPercent: Float,
+        newPercent: Float,
+        totalPlayable: Int
+    ) -> CaptureAward? {
+        guard cells > 0 else { return nil }
+        captureAwardToken += 1
+        let award = CaptureAward.scoring(
+            cells: cells,
+            level: level,
+            previousPercent: previousPercent,
+            newPercent: newPercent,
+            totalPlayable: totalPlayable,
+            targetPercent: targetPercent,
+            id: captureAwardToken
+        )
+        score += award.points
+        lastCaptureAward = award
+        return award
     }
 
     func gameOver() {
@@ -124,6 +141,7 @@ class GameManager: ObservableObject {
     func revive() {
         lives += 1
         isGameOver = false
+        isPaused = false
         isPlaying = true
     }
 

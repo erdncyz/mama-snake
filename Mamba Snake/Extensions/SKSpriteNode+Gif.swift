@@ -21,7 +21,12 @@ private enum GIFTextureStore {
 extension SKSpriteNode {
 
     /// GIF dosyasından animasyon oluşturur ve node'a uygular
-    static func createAnimatedSprite(gifNamed name: String, size: CGSize) -> SKSpriteNode? {
+    static func createAnimatedSprite(
+        gifNamed name: String,
+        size: CGSize,
+        timePerFrame: TimeInterval = 0.12,
+        filtering: SKTextureFilteringMode = .linear
+    ) -> SKSpriteNode? {
         guard let textures = loadGIFTextures(named: name) else {
             print("❌ GIF yüklenemedi: \(name)")
             return nil
@@ -32,11 +37,14 @@ extension SKSpriteNode {
             return nil
         }
 
+        // Pixel-art skinler için keskin (nearest) filtreleme uygulanır.
+        textures.forEach { $0.filteringMode = filtering }
+
         let sprite = SKSpriteNode(texture: firstTexture)
         sprite.size = size
 
         // Animasyon oluştur
-        let animation = SKAction.animate(with: textures, timePerFrame: 0.1)
+        let animation = SKAction.animate(with: textures, timePerFrame: timePerFrame)
         let repeatAnimation = SKAction.repeatForever(animation)
 
         sprite.run(repeatAnimation, withKey: "gifAnimation")
