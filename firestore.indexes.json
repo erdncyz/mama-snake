@@ -1,19 +1,4 @@
 {
-  "indexes": [
-    {
-      "collectionGroup": "multiplayerScores",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "playerIDs",
-          "arrayConfig": "CONTAINS"
-        },
-        {
-          "fieldPath": "score",
-          "order": "DESCENDING"
-        }
-      ]
-    }
-  ],
+  "indexes": [],
   "fieldOverrides": []
 }

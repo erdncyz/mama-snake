@@ -41,10 +41,6 @@ class GameScene: SKScene {
     var activeTrailPath: CGMutablePath!
     var activeTrailCorners: [CGPoint] = []
     var bugTrailEmitter: SKEmitterNode!
-    var secondBugNode: SKSpriteNode?
-    var secondActiveTrailNode: SKShapeNode?
-    var secondActiveTrailPath = CGMutablePath()
-    var secondActiveTrailCorners: [CGPoint] = []
 
     // Entities
     var bugGridPos: (x: Int, y: Int) = (0, 0)
@@ -52,38 +48,7 @@ class GameScene: SKScene {
     var snakePosition: CGPoint = .zero
     var snakeVelocity: CGVector = .zero
     var snakeBody: [SKSpriteNode] = []
-    var secondBugGridPos: (x: Int, y: Int) = (0, 0)
-    var secondTrailStartGridPos: (x: Int, y: Int) = (0, 0)
-    var secondCurrentDirection: Direction = .none
-    var lastAppliedRemoteInputSequence = 0
-
-    var multiplayerSequence = 0
-    var multiplayerGridRevision = 0
-    var hostTrailCellIndices = Set<Int>()
-    var guestTrailCellIndices = Set<Int>()
-    var lastPublishedGridRevision = -1
-    var lastAppliedSequence = -1
-    var lastAppliedGridRevision = -1
-    var remoteFilledCells = Set<Int>()
-    var remoteTrailCells = Set<Int>()
-    var lastMultiplayerPublishTime: TimeInterval = 0
-    var isMultiplayerPublishInFlight = false
-    var hasPendingForcedMultiplayerPublish = false
-    var hasRemoteTargets = false
-    var remoteHostTarget = CGPoint.zero
-    var remoteGuestTarget = CGPoint.zero
-    var remoteHostTrailTargets: [CGPoint] = []
-    var remoteGuestTrailTargets: [CGPoint] = []
-    var remoteSnakeTarget = CGPoint.zero
-    var remoteSnakeBodyTargets: [CGPoint] = []
-    var remoteSnakeVelocity = CGVector.zero
-    var remoteSnakeBodyVelocities: [CGVector] = []
-    var lastAuthoritativeSnakePosition = CGPoint.zero
-    var lastAuthoritativeSnakeBodyPositions: [CGPoint] = []
-    var lastSnapshotArrivalTime: TimeInterval = 0
-    // Misafirin kendi yön girdisine anında tepki (host onayı gelene kadar)
-    var predictedGuestDirection: Direction = .none
-    var predictedGuestDirectionTime: TimeInterval = 0
+    var trailCellIndices = Set<Int>()
 
     // Snake Movement History for Trail Effect
     var snakeHistory: [CGPoint] = []
@@ -242,42 +207,18 @@ class GameScene: SKScene {
         // Taşan kısmın ekranda kalması için her kenarda 2 hücrelik pay bırakıyoruz.
         let edgeCells: CGFloat = 2
         let widthBasedGridSize = availableWidth / (CGFloat(targetColumns) + edgeCells * 2)
-        if GameManager.shared.isMultiplayer {
-            rows = 63
-        } else {
-            rows = max(
-                30,
-                Int(floor(availableHeight / widthBasedGridSize)) - Int(edgeCells * 2))
-        }
+        rows = max(
+            30,
+            Int(floor(availableHeight / widthBasedGridSize)) - Int(edgeCells * 2))
         gridSize = min(
             widthBasedGridSize,
             availableHeight / (CGFloat(rows) + edgeCells * 2))
 
         grid = Array(repeating: Array(repeating: .empty, count: rows), count: cols)
-        hostTrailCellIndices.removeAll(keepingCapacity: true)
-        guestTrailCellIndices.removeAll(keepingCapacity: true)
+        trailCellIndices.removeAll(keepingCapacity: true)
         activeTrailCorners.removeAll(keepingCapacity: true)
-        secondActiveTrailCorners.removeAll(keepingCapacity: true)
-        hasRemoteTargets = false
-        remoteHostTrailTargets.removeAll(keepingCapacity: true)
-        remoteGuestTrailTargets.removeAll(keepingCapacity: true)
-        remoteSnakeVelocity = .zero
-        remoteSnakeBodyVelocities.removeAll(keepingCapacity: true)
-        lastAuthoritativeSnakePosition = .zero
-        lastAuthoritativeSnakeBodyPositions.removeAll(keepingCapacity: true)
-        lastSnapshotArrivalTime = 0
-        predictedGuestDirection = .none
-        lastAppliedRemoteInputSequence = MultiplayerService.shared.remoteDirectionSequence
         hasHandledSwipeInput = false
         lastUpdateTime = 0
-        multiplayerGridRevision += 1
-        if GameManager.shared.isMultiplayer {
-            lastAppliedSequence = -1
-            lastAppliedGridRevision = -1
-            lastPublishedGridRevision = -1
-            remoteFilledCells.removeAll(keepingCapacity: true)
-            remoteTrailCells.removeAll(keepingCapacity: true)
-        }
 
         // Set Borders (Now these will be off-screen)
         for x in 0..<cols {
@@ -335,23 +276,14 @@ class GameScene: SKScene {
         bugNode.zPosition = 10
 
         // Böceği ekranın en altına, ortaya yerleştir (Bix Challenge tarzı)
-        bugGridPos = (GameManager.shared.isMultiplayer ? cols / 3 : cols / 2, 0)
+        bugGridPos = (cols / 2, 0)
         let bugX = CGFloat(bugGridPos.x) * gridSize + gridSize / 2
         let bugY = CGFloat(bugGridPos.y) * gridSize + gridSize / 2
         bugNode.position = CGPoint(x: bugX, y: bugY)
         tileMap.addChild(bugNode)
-        if GameManager.shared.isMultiplayer {
-            addPlayerMarker(to: bugNode, color: .cyan)
-        }
 
         // Ağ efekti setup
         setupBugTrailEffect()
-
-        if GameManager.shared.isMultiplayer {
-            setupSecondBug()
-        } else {
-            secondBugNode = nil
-        }
 
         // --- Trail Line Setup (Bix Challenge Style) ---
         activeTrailNode = SKShapeNode()
@@ -383,8 +315,6 @@ class GameScene: SKScene {
         } else {
             currentState = .ready
         }
-
-        publishMultiplayerSnapshot(force: true)
     }
 
     func setupSnake() {
@@ -469,16 +399,6 @@ class GameScene: SKScene {
     // MARK: - Game Loop & Logic
 
     override func update(_ currentTime: TimeInterval) {
-        if GameManager.shared.isMultiplayer && MultiplayerService.shared.isGuest {
-            if lastUpdateTime == 0 { lastUpdateTime = currentTime }
-            let rawRemoteDelta = currentTime - lastUpdateTime
-            let remoteDelta = min(CGFloat(rawRemoteDelta), 0.1)
-            lastUpdateTime = currentTime
-            applyLatestMultiplayerSnapshot()
-            interpolateRemoteEntities(dt: remoteDelta)
-            return
-        }
-
         // Sync Helper: If manager says playing but we are ready, start!
         if GameManager.shared.isPlaying && currentState == .ready {
             currentState = .playing
@@ -500,16 +420,11 @@ class GameScene: SKScene {
 
         moveBug(dt: safeDt)
         guard currentState == .playing, !isEating else { return }
-        if GameManager.shared.isMultiplayer {
-            moveSecondBug(dt: safeDt)
-            guard currentState == .playing, !isEating else { return }
-        }
         moveSnake(dt: safeDt)
         guard currentState == .playing, !isEating else { return }
 
         checkWinCondition()
         updateLabels()
-        publishMultiplayerSnapshot(at: currentTime)
     }
 
     func moveBug(dt: CGFloat) {
@@ -665,7 +580,7 @@ class GameScene: SKScene {
             if currentCell == .trail {
                 // Closing Loop!
                 bugGridPos = (newX, newY)
-                fillArea(closing: .host)
+                fillArea()
 
                 // Clear visual trail
                 activeTrailPath = CGMutablePath()
@@ -694,8 +609,7 @@ class GameScene: SKScene {
 
             // Mark new cell
             grid[newX][newY] = .trail
-            hostTrailCellIndices.insert(newX * rows + newY)
-            multiplayerGridRevision += 1
+            trailCellIndices.insert(newX * rows + newY)
             // We DO NOT update visual tile here to avoid "blocks" appearing.
             // But we MUST enable logic for enemies.
             // Optional: Show faint grid trail? NO, user wants to remove square logic.
@@ -853,26 +767,6 @@ class GameScene: SKScene {
                 return
             }
         }
-
-        if let secondBugNode, GameManager.shared.isMultiplayer {
-            let headDistance = hypot(
-                snakeNode.position.x - secondBugNode.position.x,
-                snakeNode.position.y - secondBugNode.position.y)
-            if headDistance < 15.0 {
-                triggerDeathSequence(targetBug: secondBugNode)
-                return
-            }
-
-            for segment in snakeBody {
-                let bodyDistance = hypot(
-                    segment.position.x - secondBugNode.position.x,
-                    segment.position.y - secondBugNode.position.y)
-                if bodyDistance < 10.0 {
-                    triggerDeathSequence(targetBug: secondBugNode)
-                    return
-                }
-            }
-        }
     }
 
     private func updateSnakeBodyAlongPath() {
@@ -984,20 +878,11 @@ class GameScene: SKScene {
         return points
     }
 
-    func fillArea(closing owner: TrailOwner) {
-        let closingTrailCells = owner == .host
-            ? hostTrailCellIndices : guestTrailCellIndices
-        let otherTrailCells = owner == .host
-            ? guestTrailCellIndices : hostTrailCellIndices
-
-        guard !closingTrailCells.isEmpty else { return }
+    func fillArea() {
+        guard !trailCellIndices.isEmpty else { return }
 
         var visited = Array(repeating: Array(repeating: false, count: rows), count: cols)
         var queue: [(Int, Int)] = []
-
-        func isFloodReachable(x: Int, y: Int) -> Bool {
-            grid[x][y] == .empty || otherTrailCells.contains(x * rows + y)
-        }
 
         // Only seed cells actually occupied from the head through the final
         // body segment. Older history points are behind the visible snake.
@@ -1006,7 +891,7 @@ class GameScene: SKScene {
             let x = max(0, min(cols - 1, Int(point.x / gridSize)))
             let y = max(0, min(rows - 1, Int(point.y / gridSize)))
             let index = x * rows + y
-            if isFloodReachable(x: x, y: y) {
+            if grid[x][y] == .empty {
                 snakeSeedCells.insert(index)
             }
         }
@@ -1031,7 +916,7 @@ class GameScene: SKScene {
 
             for (nx, ny) in neighbors {
                 if nx >= 0 && nx < cols && ny >= 0 && ny < rows {
-                    if !visited[nx][ny] && isFloodReachable(x: nx, y: ny) {
+                    if !visited[nx][ny] && grid[nx][ny] == .empty {
                         visited[nx][ny] = true
                         queue.append((nx, ny))
                     }
@@ -1047,7 +932,7 @@ class GameScene: SKScene {
         for x in 0..<cols {
             for y in 0..<rows {
                 let index = x * rows + y
-                if closingTrailCells.contains(index) {
+                if trailCellIndices.contains(index) {
                     grid[x][y] = .filled
                     newlyFilled += 1
                 } else if grid[x][y] == .empty && !visited[x][y] {
@@ -1066,14 +951,9 @@ class GameScene: SKScene {
             }
         }
 
-        if owner == .host {
-            hostTrailCellIndices.removeAll(keepingCapacity: true)
-        } else {
-            guestTrailCellIndices.removeAll(keepingCapacity: true)
-        }
+        trailCellIndices.removeAll(keepingCapacity: true)
 
         refreshTileMap()
-        multiplayerGridRevision += 1
         let pct = Float(filledCount) / Float(totalCells) * 100.0
 
         // Puan yalnızca bu hamlede YENİ kapatılan hücreler için verilir;
@@ -1085,9 +965,8 @@ class GameScene: SKScene {
         playSound(.score)  // Score/Confirm
     }
 
-    func triggerDeathSequence(targetBug: SKSpriteNode? = nil) {
+    func triggerDeathSequence() {
         if isEating { return }
-        guard let eatenBug = targetBug ?? bugNode else { return }
         isEating = true
 
         // Play crash/eat sound immediately
@@ -1095,7 +974,7 @@ class GameScene: SKScene {
 
         // Animation Sequence
         // 1. Move Head to Bug (Snap)
-        let moveAction = SKAction.move(to: eatenBug.position, duration: 0.2)
+        let moveAction = SKAction.move(to: bugNode.position, duration: 0.2)
         moveAction.timingMode = .easeOut
 
         // 2. Crunch Animation (Scale Up/Down)
@@ -1111,7 +990,7 @@ class GameScene: SKScene {
         let bugAction = SKAction.sequence([shakeSeq, shrink])
 
         snakeNode.run(SKAction.sequence([moveAction, crunch]))
-        eatenBug.run(bugAction)
+        bugNode.run(bugAction)
 
         // 4. Wait 2-3 seconds then Die
         let wait = SKAction.wait(forDuration: 2.5)
@@ -1148,9 +1027,7 @@ class GameScene: SKScene {
                     if grid[x][y] == .trail { grid[x][y] = .empty }
                 }
             }
-            hostTrailCellIndices.removeAll(keepingCapacity: true)
-            guestTrailCellIndices.removeAll(keepingCapacity: true)
-            multiplayerGridRevision += 1
+            trailCellIndices.removeAll(keepingCapacity: true)
             refreshTileMap()
 
             // Clear web trail
@@ -1166,7 +1043,6 @@ class GameScene: SKScene {
                 // Maybe show "Tap to Continue" overlay?
                 // For now we just wait for tap logic in ContentView
             }
-            publishMultiplayerSnapshot(force: true)
         }
     }
 
@@ -1202,8 +1078,6 @@ class GameScene: SKScene {
         bugNode.zRotation = 0
         bugNode.setScale(1.0)
 
-        resetSecondBugPosition()
-
         // Re-setup snake fully to reset body history and positions
         setupSnake()
     }
@@ -1216,7 +1090,6 @@ class GameScene: SKScene {
             currentState = .playing
             DispatchQueue.main.async { GameManager.shared.isPaused = false }
         }
-        publishMultiplayerSnapshot(force: true)
     }
 
     func gameOver(win: Bool) {
@@ -1229,7 +1102,6 @@ class GameScene: SKScene {
                 GameManager.shared.gameOver()
             }
         }
-        publishMultiplayerSnapshot(force: true)
     }
 
     func checkWinCondition() {

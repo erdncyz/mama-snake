@@ -8,11 +8,6 @@ enum CellType: Int {
     case border = 3
 }
 
-enum TrailOwner {
-    case host
-    case guest
-}
-
 enum Direction: String {
     case none, up, down, left, right
 

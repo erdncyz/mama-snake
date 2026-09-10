@@ -13,8 +13,6 @@
 		BAF100032F30000100F1A001 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = BAF100072F30000100F1A001 /* FirebaseFirestore */; };
 		BAF100082F30000100F1A001 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = BAF1000B2F30000100F1A001 /* FirebaseAnalytics */; };
 		BAF100092F30000100F1A001 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = BAF1000C2F30000100F1A001 /* FirebaseCrashlytics */; };
-		BAF1000A2F30000100F1A001 /* FirebaseRemoteConfig in Frameworks */ = {isa = PBXBuildFile; productRef = BAF1000D2F30000100F1A001 /* FirebaseRemoteConfig */; };
-		BAF100202F30000200F1A002 /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = BAF100212F30000200F1A002 /* FirebaseDatabase */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,8 +32,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BAF1000A2F30000100F1A001 /* FirebaseRemoteConfig in Frameworks */,
-				BAF100202F30000200F1A002 /* FirebaseDatabase in Frameworks */,
 				BAF100092F30000100F1A001 /* FirebaseCrashlytics in Frameworks */,
 				BAF100082F30000100F1A001 /* FirebaseAnalytics in Frameworks */,
 				BAF100032F30000100F1A001 /* FirebaseFirestore in Frameworks */,
@@ -87,8 +83,6 @@
 			packageProductDependencies = (
 				BAF1000B2F30000100F1A001 /* FirebaseAnalytics */,
 				BAF1000C2F30000100F1A001 /* FirebaseCrashlytics */,
-				BAF1000D2F30000100F1A001 /* FirebaseRemoteConfig */,
-				BAF100212F30000200F1A002 /* FirebaseDatabase */,
 				BAF100052F30000100F1A001 /* FirebaseCore */,
 				BAF100062F30000100F1A001 /* FirebaseAuth */,
 				BAF100072F30000100F1A001 /* FirebaseFirestore */,
@@ -448,16 +442,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BAF100042F30000100F1A001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseCrashlytics;
-		};
-		BAF1000D2F30000100F1A001 /* FirebaseRemoteConfig */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = BAF100042F30000100F1A001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseRemoteConfig;
-		};
-		BAF100212F30000200F1A002 /* FirebaseDatabase */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = BAF100042F30000100F1A001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseDatabase;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

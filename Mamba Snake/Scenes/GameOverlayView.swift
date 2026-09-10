@@ -2,23 +2,18 @@ import SwiftUI
 
 struct GameOverlayView: View {
     @ObservedObject var gameManager = GameManager.shared
-    @ObservedObject private var multiplayerService = MultiplayerService.shared
-    @ObservedObject private var featureService = FirebaseFeatureService.shared
     var onResume: () -> Void
     var onRestart: () -> Void
     var onNextLevel: () -> Void
     var onStart: () -> Void
     var onPauseToggle: () -> Void
     var onContinue: () -> Void
-    var onExitMultiplayer: () -> Void
     var onMainMenu: () -> Void
 
     @State private var showLeaderboard = false
     @State private var showNicknamePrompt = false
     @State private var tempNickname = ""
     @State private var isEditingFromMenu = false
-    @State private var showMultiplayerLobby = false
-    @State private var pendingGameMode: GameMode = .solo
 
     var body: some View {
         ZStack {
@@ -60,15 +55,7 @@ struct GameOverlayView: View {
             }
         }
         .sheet(isPresented: $showLeaderboard) {
-            LeaderboardView(
-                isPresented: $showLeaderboard,
-                initialCategory: gameManager.isMultiplayer ? .multiplayer : .solo)
-        }
-        .sheet(isPresented: $showMultiplayerLobby) {
-            MultiplayerLobbyView(nickname: gameManager.nickname) {
-                gameManager.startMultiplayerGame()
-                onStart()
-            }
+            LeaderboardView(isPresented: $showLeaderboard)
         }
     }
 
@@ -76,9 +63,7 @@ struct GameOverlayView: View {
 
     var hudContent: some View {
         HStack(alignment: .center) {
-            // Left: Stats
             HStack(spacing: 14) {
-                // Score Group
                 VStack(alignment: .leading, spacing: 2) {
                     Text("SCORE")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -92,13 +77,11 @@ struct GameOverlayView: View {
                         .minimumScaleFactor(0.6)
                 }
 
-                // Separator
                 Rectangle()
                     .fill(Color.white.opacity(0.2))
                     .frame(width: 2, height: 30)
                     .cornerRadius(1)
 
-                // Level Group
                 VStack(alignment: .leading, spacing: 2) {
                     Text("LEVEL")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -115,20 +98,12 @@ struct GameOverlayView: View {
                             .padding(.leading, 2)
                             .offset(y: 4)
                     }
-
-                    if gameManager.isMultiplayer {
-                        Text("ROOM \(MultiplayerService.shared.roomCode)")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundColor(.cyan)
-                    }
                 }
             }
 
             Spacer()
 
-            // Right: Lives & Action
             HStack(spacing: 12) {
-                // Lives
                 HStack(spacing: 4) {
                     Image(systemName: "heart.fill")
                         .font(.system(size: 16))
@@ -143,21 +118,7 @@ struct GameOverlayView: View {
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(12)
 
-                if gameManager.isMultiplayer {
-                    Button(action: onExitMultiplayer) {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 38, height: 38)
-                            .background(Color.red.opacity(0.8))
-                            .clipShape(Circle())
-                    }
-                    .accessibilityLabel("Leave room")
-                }
-
-                // Pause Button
-                if !gameManager.isMultiplayer || gameManager.isMultiplayerHost {
-                    Button(action: onPauseToggle) {
+                Button(action: onPauseToggle) {
                     ZStack {
                         Circle()
                             .fill(
@@ -182,7 +143,6 @@ struct GameOverlayView: View {
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
                     }
-                    }
                 }
             }
         }
@@ -192,7 +152,6 @@ struct GameOverlayView: View {
         .padding(.bottom, GameLayout.hudBottomPadding)
         .background(
             ZStack {
-                // Liquid Glass Effect
                 Color.white.opacity(0.1)
 
                 Rectangle()
@@ -236,7 +195,6 @@ struct GameOverlayView: View {
             VStack(spacing: 30) {
                 Spacer()
 
-                // Logo
                 VStack(spacing: 10) {
                     GifImageView(gifName: "LaunchScreen")
                         .frame(width: 120, height: 120)
@@ -249,7 +207,6 @@ struct GameOverlayView: View {
                         .shadow(color: .black, radius: 2, x: 2, y: 2)
                 }
 
-                // Instructions
                 VStack(alignment: .leading, spacing: 15) {
                     Label("Swipe to Turn", systemImage: "hand.draw.fill")
                     Label("Eat Bugs to Grow", systemImage: "ant.fill")
@@ -257,26 +214,15 @@ struct GameOverlayView: View {
                     Label("Faster & Bigger Every Lvl", systemImage: "bolt.fill")
                     Label("+1 Life Every 10 Lvl", systemImage: "heart.circle.fill")
                 }
-                .font(.callout)  // Reduced from title3
+                .font(.callout)
                 .foregroundColor(.white)
                 .padding()
 
                 Spacer()
 
-                // Buttons Stack
                 VStack(spacing: 15) {
-                    if let errorMessage = multiplayerService.errorMessage {
-                        Text(errorMessage)
-                            .font(.footnote.weight(.semibold))
-                            .foregroundColor(.orange)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 260)
-                    }
-
-                    Button(action: {
-                        requestStart(mode: .solo)
-                    }) {
-                        Label("SOLO PLAY", systemImage: "person.fill")
+                    Button(action: requestStart) {
+                        Label("PLAY", systemImage: "play.fill")
                             .font(.title2)
                             .fontWeight(.heavy)
                             .foregroundColor(.white)
@@ -285,24 +231,6 @@ struct GameOverlayView: View {
                             .cornerRadius(30)
                             .shadow(radius: 10)
                     }
-
-                    Button(action: {
-                        requestStart(mode: .multiplayer)
-                    }) {
-                        Label(
-                            featureService.multiplayerEnabled
-                                ? "ONLINE CO-OP" : "CO-OP UNAVAILABLE",
-                            systemImage: "person.2.fill")
-                            .font(.headline)
-                            .fontWeight(.heavy)
-                            .foregroundColor(.white)
-                            .frame(width: 220, height: 54)
-                            .background(Color.orange)
-                            .cornerRadius(27)
-                            .shadow(radius: 8)
-                    }
-                    .disabled(!featureService.multiplayerEnabled)
-                    .opacity(featureService.multiplayerEnabled ? 1 : 0.55)
 
                     if !gameManager.nickname.isEmpty {
                         Button(action: {
@@ -366,7 +294,7 @@ struct GameOverlayView: View {
 
                 AdMobBanner()
                     .frame(maxWidth: .infinity)
-                    .frame(height: 100)  // Adaptive banner height is usually around 50-100 depending on device, but we can set frame height or just let it be. Let's start with flexible.
+                    .frame(height: 100)
                     .padding(.bottom, 20)
             }
         }
@@ -414,32 +342,25 @@ struct GameOverlayView: View {
                     .padding(.top, 4)
                 }
 
-                if !gameManager.isMultiplayer || gameManager.isMultiplayerHost {
-                    Button(action: {
-                        if gameManager.isLevelComplete {
-                            onNextLevel()
-                        } else {
-                            onRestart()
-                        }
-                    }) {
-                        Text(gameManager.isLevelComplete ? "NEXT LEVEL" : "TRY AGAIN")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.black)
-                            .frame(width: 200, height: 50)
-                            .background(Color.white)
-                            .cornerRadius(25)
-                            .padding(.top, 20)
+                Button(action: {
+                    if gameManager.isLevelComplete {
+                        onNextLevel()
+                    } else {
+                        onRestart()
                     }
-                } else {
-                    Text("Waiting for the host")
+                }) {
+                    Text(gameManager.isLevelComplete ? "NEXT LEVEL" : "TRY AGAIN")
                         .font(.headline)
-                        .foregroundColor(.white.opacity(0.7))
+                        .fontWeight(.bold)
+                        .foregroundColor(.black)
+                        .frame(width: 200, height: 50)
+                        .background(Color.white)
+                        .cornerRadius(25)
+                        .padding(.top, 20)
                 }
 
-                if !gameManager.isLevelComplete && featureService.rewardedAdsEnabled {
+                if !gameManager.isLevelComplete {
                     Button(action: {
-                        guard featureService.rewardedAdsEnabled else { return }
                         AdMobService.shared.showRewardedAd {
                             gameManager.revive()
                         }
@@ -465,15 +386,9 @@ struct GameOverlayView: View {
                         .padding()
                 }
 
-                if gameManager.isMultiplayer {
-                    Button("LEAVE ROOM", action: onExitMultiplayer)
-                        .font(.subheadline.bold())
-                        .foregroundColor(.red)
-                } else {
-                    Button("MAIN MENU", action: onMainMenu)
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white.opacity(0.85))
-                }
+                Button("MAIN MENU", action: onMainMenu)
+                    .font(.subheadline.bold())
+                    .foregroundColor(.white.opacity(0.85))
             }
             .padding(40)
             .background(Color(red: 0.1, green: 0.12, blue: 0.18))
@@ -522,25 +437,18 @@ struct GameOverlayView: View {
                 }
                 .padding(.top, 10)
 
-                if gameManager.isMultiplayer {
-                    Button("LEAVE ROOM", action: onExitMultiplayer)
-                        .font(.headline)
-                        .foregroundColor(.red)
-                        .padding(.top, 8)
-                } else {
-                    Button(action: onMainMenu) {
-                        HStack {
-                            Image(systemName: "house.fill")
-                            Text("MAIN MENU")
-                        }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(15)
+                Button(action: onMainMenu) {
+                    HStack {
+                        Image(systemName: "house.fill")
+                        Text("MAIN MENU")
                     }
-                    .padding(.top, 10)
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(15)
                 }
+                .padding(.top, 10)
             }
         }
     }
@@ -568,20 +476,15 @@ struct GameOverlayView: View {
                     .font(.title3)
                     .foregroundColor(.white)
 
-                if !gameManager.isMultiplayer || gameManager.isMultiplayerHost {
-                    Button(action: onContinue) {
-                        Text("TAP TO CONTINUE")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .frame(width: 240, height: 60)
-                            .background(Color.orange)
-                            .cornerRadius(30)
-                            .shadow(radius: 10)
-                    }
-                } else {
-                    Text("Waiting for the host")
-                        .foregroundColor(.white.opacity(0.7))
+                Button(action: onContinue) {
+                    Text("TAP TO CONTINUE")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .frame(width: 240, height: 60)
+                        .background(Color.orange)
+                        .cornerRadius(30)
+                        .shadow(radius: 10)
                 }
             }
         }
@@ -623,7 +526,7 @@ struct GameOverlayView: View {
                             gameManager.setNickname(sanitizedNickname)
                             showNicknamePrompt = false
                             if !isEditingFromMenu {
-                                beginPendingGameMode()
+                                onStart()
                             }
                         }
                     }) {
@@ -645,28 +548,12 @@ struct GameOverlayView: View {
         }
     }
 
-    private func requestStart(mode: GameMode) {
-        multiplayerService.errorMessage = nil
-        if mode == .multiplayer && !featureService.multiplayerEnabled {
-            multiplayerService.errorMessage = MultiplayerError.multiplayerUnavailable.localizedDescription
-            return
-        }
-        pendingGameMode = mode
+    private func requestStart() {
         if gameManager.nickname.isEmpty {
             isEditingFromMenu = false
             showNicknamePrompt = true
         } else {
-            beginPendingGameMode()
-        }
-    }
-
-    private func beginPendingGameMode() {
-        switch pendingGameMode {
-        case .solo:
-            gameManager.startSoloGame()
             onStart()
-        case .multiplayer:
-            showMultiplayerLobby = true
         }
     }
 }
@@ -679,7 +566,6 @@ struct GameOverlayView: View {
         onStart: {},
         onPauseToggle: {},
         onContinue: {},
-        onExitMultiplayer: {},
         onMainMenu: {}
     )
 }

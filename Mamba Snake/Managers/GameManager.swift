@@ -12,7 +12,6 @@ class GameManager: ObservableObject {
     @Published var level: Int = 1
     @Published var nickname: String = PlayerNickname.sanitize(
         UserDefaults.standard.string(forKey: "UserNickname") ?? "")
-    @Published var gameMode: GameMode = .solo
     @Published var highScore: Int = UserDefaults.standard.integer(forKey: "HighScore") {
         didSet {
             UserDefaults.standard.set(highScore, forKey: "HighScore")
@@ -38,9 +37,6 @@ class GameManager: ObservableObject {
     @Published var lastLevelBonus: Int = 0
 
     let targetPercent: Float = 75.0
-
-    var isMultiplayer: Bool { gameMode == .multiplayer }
-    var isMultiplayerHost: Bool { isMultiplayer && MultiplayerService.shared.isHost }
 
     func reset() {
         score = 0
@@ -78,36 +74,20 @@ class GameManager: ObservableObject {
         isPaused = false
         isGameOver = false
         isLevelComplete = false
-    }
-
-    func startSoloGame() {
-        gameMode = .solo
-        startGame()
-        FirebaseTelemetryService.shared.logGameStarted(mode: .solo)
-    }
-
-    func startMultiplayerGame() {
-        gameMode = .multiplayer
-        score = 0
-        lives = 3
-        percentCovered = 0
-        level = 1
-        startGame()
-        FirebaseTelemetryService.shared.logGameStarted(mode: .multiplayer)
+        FirebaseTelemetryService.shared.logGameStarted()
     }
 
     func returnToMenu() {
         reset()
-        gameMode = .solo
     }
 
     /// Aktif oyundan ana menüye dönüş: skoru kaybettirmeden kaydedip menüye döner.
     func quitToMenu() {
         if !isGameOver {
-            if gameMode == .solo && score > highScore {
+            if score > highScore {
                 highScore = score
             }
-            FirebaseTelemetryService.shared.logGameEnded(mode: gameMode, score: score, level: level)
+            FirebaseTelemetryService.shared.logGameEnded(score: score, level: level)
             submitScore()
         }
         returnToMenu()
@@ -130,38 +110,15 @@ class GameManager: ObservableObject {
         isPlaying = false
         isGameOver = true
 
-        if gameMode == .solo && FirebaseFeatureService.shared.interstitialAdsEnabled {
-            AdMobService.shared.showInterstitial()
-        }
+        AdMobService.shared.showInterstitial()
 
-        if gameMode == .solo && score > highScore {
+        if score > highScore {
             highScore = score
             UserDefaults.standard.set(highScore, forKey: "HighScore")
         }
 
-        FirebaseTelemetryService.shared.logGameEnded(mode: gameMode, score: score, level: level)
+        FirebaseTelemetryService.shared.logGameEnded(score: score, level: level)
         submitScore()
-    }
-
-    func applyMultiplayerSnapshot(_ snapshot: MultiplayerGameSnapshot) {
-        if score != snapshot.score { score = snapshot.score }
-        if lives != snapshot.lives { lives = snapshot.lives }
-        if level != snapshot.level { level = snapshot.level }
-        if percentCovered != snapshot.percentCovered {
-            percentCovered = snapshot.percentCovered
-        }
-        if showLanding { showLanding = false }
-
-        let shouldPlay = snapshot.gameState == .playing
-        let shouldPause = snapshot.gameState == .paused
-        let shouldShowGameOver = snapshot.gameState == .gameOver
-        let shouldShowLevelComplete = snapshot.gameState == .levelComplete
-        if isPlaying != shouldPlay { isPlaying = shouldPlay }
-        if isPaused != shouldPause { isPaused = shouldPause }
-        if isGameOver != shouldShowGameOver { isGameOver = shouldShowGameOver }
-        if isLevelComplete != shouldShowLevelComplete {
-            isLevelComplete = shouldShowLevelComplete
-        }
     }
 
     func revive() {
@@ -177,7 +134,7 @@ class GameManager: ObservableObject {
         score += bonus
         isPlaying = false
         isLevelComplete = true
-        FirebaseTelemetryService.shared.logLevelCompleted(mode: gameMode, level: level)
+        FirebaseTelemetryService.shared.logLevelCompleted(level: level)
     }
 
     func setNickname(_ name: String) {
@@ -205,25 +162,6 @@ class GameManager: ObservableObject {
 
     func submitScore() {
         guard !nickname.isEmpty, score > 0 else { return }
-
-        if isMultiplayer {
-            guard MultiplayerService.shared.isHost else { return }
-            let roomCode = MultiplayerService.shared.roomCode
-            guard !roomCode.isEmpty else { return }
-
-            Task {
-                do {
-                    try await FirebaseService.shared.submitMultiplayerScore(
-                        roomCode: roomCode, score: score, level: level)
-                    print("Co-op score submitted successfully")
-                } catch {
-                    FirebaseTelemetryService.shared.record(
-                        error, operation: "multiplayer_score_submit")
-                    print("Failed to submit co-op score: \(error)")
-                }
-            }
-            return
-        }
 
         Task {
             do {

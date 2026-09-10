@@ -23,36 +23,27 @@ final class FirebaseTelemetryService {
         Analytics.logEvent("app_ready", parameters: nil)
     }
 
-    func logGameStarted(mode: GameMode) {
-        Analytics.logEvent("game_started", parameters: ["mode": mode.rawValue])
+    func logGameStarted() {
+        Analytics.logEvent("game_started", parameters: nil)
     }
 
-    func logGameEnded(mode: GameMode, score: Int, level: Int) {
+    func logGameEnded(score: Int, level: Int) {
         Analytics.logEvent(
             "game_ended",
             parameters: [
-                "mode": mode.rawValue,
                 AnalyticsParameterScore: score,
                 AnalyticsParameterLevel: level,
             ])
     }
 
-    func logLevelCompleted(mode: GameMode, level: Int) {
+    func logLevelCompleted(level: Int) {
         Analytics.logEvent(
             "level_completed",
-            parameters: ["mode": mode.rawValue, AnalyticsParameterLevel: level])
+            parameters: [AnalyticsParameterLevel: level])
     }
 
-    func logMultiplayerRoom(action: String) {
-        Analytics.logEvent("multiplayer_room", parameters: ["action": action])
-    }
-
-    func logLeaderboardViewed(category: LeaderboardCategory) {
-        Analytics.logEvent("leaderboard_viewed", parameters: ["category": category.rawValue])
-    }
-
-    func logRemoteConfig(status: String) {
-        Analytics.logEvent("remote_config_result", parameters: ["status": status])
+    func logLeaderboardViewed() {
+        Analytics.logEvent("leaderboard_viewed", parameters: nil)
     }
 
     func record(_ error: Error, operation: String) {

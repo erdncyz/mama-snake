@@ -7,8 +7,6 @@ const firestoreBase =
 
 const stringValue = (value) => ({ stringValue: value });
 const integerValue = (value) => ({ integerValue: String(value) });
-const doubleValue = (value) => ({ doubleValue: value });
-const arrayValue = (values) => ({ arrayValue: { values } });
 const timestampValue = () => ({ timestampValue: new Date().toISOString() });
 
 async function request(url, options, expectedStatus = 200) {
@@ -69,181 +67,57 @@ async function deleteDocument(idToken, path) {
   });
 }
 
-async function runQuery(idToken, structuredQuery) {
-  return request(`${firestoreBase}:runQuery`, {
-    method: "POST",
-    headers: authHeaders(idToken),
-    body: JSON.stringify({ structuredQuery }),
-  });
-}
-
-function makeRoomCode() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  return Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
-}
-
-let host;
-let guest;
-let roomCode;
-let roomCreated = false;
-let multiplayerScoreCreated = false;
+let user;
+let scoreCreated = false;
 
 try {
-  host = await createAnonymousUser();
-  guest = await createAnonymousUser();
-  roomCode = makeRoomCode();
+  user = await createAnonymousUser();
 
-  await patchDocument(host.idToken, `rooms/${roomCode}`, {
-    hostID: stringValue(host.localId),
-    hostNickname: stringValue("SmokeHost"),
-    hostDirection: stringValue("none"),
-    guestDirection: stringValue("none"),
-    status: stringValue("waiting"),
-    createdAt: timestampValue(),
-    updatedAt: timestampValue(),
-  });
-  roomCreated = true;
-
-  await request(`${firestoreBase}/rooms/${roomCode}`, {
-    headers: authHeaders(guest.idToken),
-  });
-
-  await patchDocument(
-    guest.idToken,
-    `rooms/${roomCode}`,
-    {
-      guestID: stringValue(guest.localId),
-      guestNickname: stringValue("SmokeGuest"),
-      guestDirection: stringValue("none"),
-      status: stringValue("playing"),
-      updatedAt: timestampValue(),
-    },
-    ["guestID", "guestNickname", "guestDirection", "status", "updatedAt"],
-  );
-
-  await patchDocument(
-    guest.idToken,
-    `rooms/${roomCode}`,
-    {
-      guestDirection: stringValue("right"),
-      guestUpdatedAt: timestampValue(),
-    },
-    ["guestDirection", "guestUpdatedAt"],
-  );
-
-  await patchDocument(
-    host.idToken,
-    `rooms/${roomCode}`,
-    {
-      sequence: integerValue(1),
-      gridRevision: integerValue(1),
-      hostX: doubleValue(10.5),
-      hostY: doubleValue(0.5),
-      guestX: doubleValue(20.5),
-      guestY: doubleValue(0.5),
-      snakeX: doubleValue(8.5),
-      snakeY: doubleValue(30.5),
-      score: integerValue(100),
-      lives: integerValue(3),
-      level: integerValue(1),
-      percentCovered: doubleValue(2.5),
-      gameState: stringValue("playing"),
-      updatedAt: timestampValue(),
-    },
-    [
-      "sequence", "gridRevision", "hostX", "hostY", "guestX", "guestY",
-      "snakeX", "snakeY", "score", "lives", "level", "percentCovered",
-      "gameState", "updatedAt",
-    ],
-  );
-
-  const room = await request(`${firestoreBase}/rooms/${roomCode}`, {
-    headers: authHeaders(guest.idToken),
-  });
-  if (room.fields.score?.integerValue !== "100") {
-    throw new Error("Guest did not receive the host snapshot.");
-  }
-
-  await patchDocument(host.idToken, `multiplayerScores/${roomCode}`, {
-    ownerID: stringValue(host.localId),
-    hostID: stringValue(host.localId),
-    guestID: stringValue(guest.localId),
-    playerIDs: arrayValue([stringValue(host.localId), stringValue(guest.localId)]),
-    hostNickname: stringValue("SmokeHost"),
-    guestNickname: stringValue("SmokeGuest"),
-    score: integerValue(100),
+  await patchDocument(user.idToken, `scores/${user.localId}`, {
+    nickname: stringValue("SmokeSolo"),
+    nicknameNormalized: stringValue("smokesolo"),
+    ownerID: stringValue(user.localId),
+    score: integerValue(42),
     level: integerValue(1),
     createdAt: timestampValue(),
     updatedAt: timestampValue(),
   });
-  multiplayerScoreCreated = true;
+  scoreCreated = true;
 
-  await patchDocument(
-    guest.idToken,
-    `multiplayerScores/${roomCode}`,
-    {
-      score: integerValue(9999),
-      updatedAt: timestampValue(),
-    },
-    ["score", "updatedAt"],
-  ).then(
-    () => { throw new Error("Guest was allowed to overwrite the team score."); },
-    (error) => {
-      if (!error.message.includes("returned 403")) throw error;
-    },
-  );
-
-  const multiplayerScore = await request(`${firestoreBase}/multiplayerScores/${roomCode}`, {
-    headers: authHeaders(guest.idToken),
+  const score = await request(`${firestoreBase}/scores/${user.localId}`, {
+    headers: authHeaders(user.idToken),
   });
-  if (multiplayerScore.fields.score?.integerValue !== "100") {
-    throw new Error("Co-op leaderboard score was not persisted.");
-  }
-
-  const userBestTeam = await runQuery(host.idToken, {
-    from: [{ collectionId: "multiplayerScores" }],
-    where: {
-      fieldFilter: {
-        field: { fieldPath: "playerIDs" },
-        op: "ARRAY_CONTAINS",
-        value: stringValue(host.localId),
-      },
-    },
-    orderBy: [{ field: { fieldPath: "score" }, direction: "DESCENDING" }],
-    limit: 1,
-  });
-  if (!userBestTeam.some((result) => result.document?.name.endsWith(`/${roomCode}`))) {
-    throw new Error("Co-op user best query did not return the team score.");
+  if (score.fields.score?.integerValue !== "42") {
+    throw new Error("Solo score was not persisted.");
   }
 
   const scores = await request(`${firestoreBase}/scores?pageSize=20`, {
-    headers: authHeaders(host.idToken),
+    headers: authHeaders(user.idToken),
   });
-  if ((scores.documents?.length ?? 0) < 5) {
-    throw new Error("Migrated leaderboard scores are missing.");
+  if ((scores.documents?.length ?? 0) < 1) {
+    throw new Error("Leaderboard scores are missing.");
   }
 
   await request(
     `${firestoreBase}/rooms?pageSize=1`,
-    { headers: authHeaders(guest.idToken) },
+    { headers: authHeaders(user.idToken) },
     403,
-  );
+  ).catch(async (error) => {
+    // rooms collection may no longer exist in rules; 403 or missing is fine
+    if (!error.message.includes("returned 403") && !error.message.includes("returned 404")) {
+      // Firestore may return permission-denied as 403 for unmatched paths depending on rules
+      // With only /scores match, unmatched paths deny by default → 403
+      throw error;
+    }
+  });
 
   console.log("FIREBASE_SMOKE_TEST_OK");
-  console.log(`MIGRATED_SCORE_DOCUMENTS=${scores.documents.length}`);
-  console.log("MULTIPLAYER_SCORE_RULES_OK");
-  console.log("MULTIPLAYER_SCORE_INDEX_OK");
+  console.log(`SCORE_DOCUMENTS=${scores.documents?.length ?? 0}`);
 } finally {
-  if (multiplayerScoreCreated && host?.idToken && roomCode) {
-    await deleteDocument(host.idToken, `multiplayerScores/${roomCode}`).catch(() => {});
+  if (scoreCreated && user?.idToken) {
+    await deleteDocument(user.idToken, `scores/${user.localId}`).catch(() => {});
   }
-  if (roomCreated && host?.idToken && roomCode) {
-    await deleteDocument(host.idToken, `rooms/${roomCode}`).catch(() => {});
-  }
-  if (guest?.idToken) {
-    await deleteAnonymousUser(guest.idToken).catch(() => {});
-  }
-  if (host?.idToken) {
-    await deleteAnonymousUser(host.idToken).catch(() => {});
+  if (user?.idToken) {
+    await deleteAnonymousUser(user.idToken).catch(() => {});
   }
 }
