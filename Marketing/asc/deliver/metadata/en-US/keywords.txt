@@ -1,0 +1,1 @@
+snake,arcade,territory,swipe,qix,classic,leaderboard,casual,reflex,puzzle

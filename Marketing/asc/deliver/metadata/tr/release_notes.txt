@@ -1,0 +1,8 @@
+Bu güncellemede neler var:
+• Karakter, yılan ve arena özelleştirme
+• Yeni arena sahneleri ve menü temaları
+• Çevrimiçi sıralama iyileştirmeleri
+• Daha akıcı oynanış ve tahta hizalama düzeltmeleri
+• İngilizce ve Türkçe dil desteği
+
+Mamba Snake oynadığınız için teşekkürler!

@@ -1,0 +1,8 @@
+What’s new in this update:
+• Character, snake, and arena customization
+• Fresh arena scenes and menu themes
+• Online leaderboard polish
+• Smoother gameplay and board alignment fixes
+• English and Turkish language support
+
+Thanks for playing Mamba Snake!

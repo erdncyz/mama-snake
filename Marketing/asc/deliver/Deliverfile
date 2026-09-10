@@ -1,0 +1,10 @@
+app_identifier "com.mamba.snake"
+skip_binary_upload true
+skip_app_version_update false
+force true
+submit_for_review false
+automatic_release false
+phased_release false
+run_precheck_before_submit false
+precheck_include_in_app_purchases false
+overwrite_screenshots true

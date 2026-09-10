@@ -1,0 +1,21 @@
+Mamba Snake, hızlı bir alan kapma arcade oyunu: kaydırarak ilerle, izini kapat ve tahtayı fethet — yılana yakalanmadan.
+
+NASIL OYNANIR
+• Güvenli alandan çıkmak için dört yöne kaydır
+• Yeni bölge kapmak için izini güvenli alana yeniden bağla
+• Bölümü bitirmek için alanın %75’ini kap
+• Yılana veya bitmemiş izine dokunma
+
+OYUNU KENDİNE GÖRE AYARLA
+• Örümcek, skarabe, uğur böceği, arı, kelebek veya akrep olarak oyna
+• Renkli rakip yılan stilleri seç
+• Arenalar: Uzay, Neon, Orman, Okyanus, Volkan, Çöl Gecesi
+• Menü temasını değiştir ve ızgarayı aç/kapa
+
+REKOR KIR
+• Her bölümde artan hız ve zorluk
+• Her 10 bölümde +1 can kazan
+• Reklam izleyerek canlan ve koşuya devam et
+• Takma adını belirle ve çevrimiçi sıralamada yarış
+
+iPhone ve iPad için tasarlandı. Öğrenmesi kolay, bırakması zor.

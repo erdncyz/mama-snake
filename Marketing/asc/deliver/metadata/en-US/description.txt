@@ -1,0 +1,21 @@
+Mamba Snake is a fast territory-capture arcade game: swipe to move, close your trail, and claim the board — without getting caught by the snake.
+
+HOW TO PLAY
+• Swipe in four directions to leave the safe zone
+• Reconnect your trail to claim new territory
+• Reach 75% claimed area to clear the level
+• Don’t touch the snake — or your unfinished trail
+
+MAKE IT YOURS
+• Play as spider, scarab, ladybug, bee, butterfly, or scorpion
+• Pick rival snake colors with animated personality
+• Switch arenas: Space, Neon, Jungle, Ocean, Volcano, Desert Night
+• Customize menu themes and toggle the arena grid
+
+KEEP PUSHING
+• Rising speed and tighter challenges every level
+• Earn +1 life every 10 levels
+• Watch an ad to revive and keep your run going
+• Set a nickname and compete on the online leaderboard
+
+Designed for iPhone and iPad. Simple to learn, hard to put down.
